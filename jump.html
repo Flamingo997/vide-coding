@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>跳一跳 - Three.js</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    overflow: hidden;
+    /* 纪念碑谷式黄昏渐变天空：蜜桃 → 粉 → 蓝紫 */
+    background: linear-gradient(180deg, #ffe9d2 0%, #f7c3cf 42%, #b3bce0 78%, #93a2cf 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  #game-container { width: 100vw; height: 100vh; }
+
+  /* 分数显示 */
+  #score {
+    position: fixed;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 48px;
+    font-weight: 700;
+    color: #4a3f63;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 2px 8px rgba(255,255,255,0.5);
+  }
+
+  /* 蓄力条 */
+  #power-bar-container {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 240px;
+    height: 8px;
+    background: rgba(0,0,0,0.08);
+    border-radius: 4px;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  #power-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #f0a48c, #b48ad8);
+    border-radius: 4px;
+  }
+  #power-bar-container.visible { opacity: 1; }
+
+  /* 游戏结束遮罩 */
+  #game-over {
+    position: fixed;
+    inset: 0;
+    background: rgba(255, 233, 210, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 20;
+    backdrop-filter: blur(6px);
+  }
+  #game-over.visible { display: flex; }
+  #game-over h2 {
+    font-size: 36px;
+    color: #4a3f63;
+    margin-bottom: 8px;
+  }
+  #game-over p {
+    font-size: 18px;
+    color: #7a6f92;
+    margin-bottom: 32px;
+  }
+  #restart-btn {
+    padding: 14px 40px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    background: #4a3f63;
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-family: inherit;
+  }
+  #restart-btn:hover { background: #372d4d; }
+  #game-over .restart-hint {
+    margin-top: 16px;
+    margin-bottom: 0;
+    font-size: 13px;
+    color: #9b9a97;
+  }
+  /* 历史最高分行 */
+  #best-score-line {
+    font-size: 14px;
+    color: #7a6f92;
+    margin-bottom: 8px;
+  }
+  /* 新纪录提示 */
+  #new-record {
+    display: none;
+    font-size: 18px;
+    font-weight: 700;
+    color: #d96b8a;
+    margin-bottom: 24px;
+    animation: recordPulse 1s ease-in-out infinite;
+  }
+  #new-record.visible { display: block; }
+  @keyframes recordPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.85; }
+  }
+
+  /* 结束界面模式切换按钮组 */
+  .mode-switch {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mode-switch-label {
+    font-size: 14px;
+    color: #7a6f92;
+  }
+  .mode-switch-btn {
+    padding: 8px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a3f63;
+    background: rgba(255,255,255,0.6);
+    border: 1.5px solid rgba(74,63,99,0.25);
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .mode-switch-btn:hover {
+    background: rgba(255,255,255,0.9);
+    border-color: #4a3f63;
+  }
+  /* 当前激活的模式按钮：反色高亮 */
+  .mode-switch-btn.active {
+    color: #fff;
+    background: #4a3f63;
+    border-color: #4a3f63;
+  }
+
+  /* 提示文字 */
+  #hint {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    color: #9b9a97;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* 落地飘分 +1 */
+  .plus-one {
+    position: fixed;
+    font-size: 28px;
+    font-weight: 700;
+    color: #4a3f63;
+    pointer-events: none;
+    z-index: 15;
+    text-shadow: 0 2px 6px rgba(255,255,255,0.8);
+    animation: floatUp 0.9s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0%   { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
+    20%  { opacity: 1; transform: translate(-50%, -14px) scale(1.1); }
+    100% { opacity: 0; transform: translate(-50%, -70px) scale(1); }
+  }
+
+  /* 总分数跳动一下的反馈 */
+  #score.bump { animation: bump 0.3s ease; }
+  @keyframes bump {
+    0%   { transform: translateX(-50%) scale(1); }
+    40%  { transform: translateX(-50%) scale(1.25); }
+    100% { transform: translateX(-50%) scale(1); }
+  }
+
+  /* 连击显示（右上角） */
+  #combo {
+    position: fixed;
+    top: 36px;
+    right: 30px;
+    font-size: 22px;
+    font-weight: 700;
+    color: #d96b8a;
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 0.2s, transform 0.2s;
+    text-shadow: 0 2px 6px rgba(255,255,255,0.7);
+  }
+  #combo.visible { opacity: 1; transform: scale(1); }
+  #combo.pulse { animation: comboPulse 0.4s ease; }
+  @keyframes comboPulse {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.35); }
+    100% { transform: scale(1); }
+  }
+
+  /* 限时模式倒计时（左上角） */
+  #timer {
+    position: fixed;
+    top: 36px;
+    left: 30px;
+    font-size: 22px;
+    font-weight: 700;
+    color: #4a3f63;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 2px 6px rgba(255,255,255,0.7);
+    font-variant-numeric: tabular-nums;
+  }
+  #timer.urgent { color: #e85a5a; animation: timerPulse 0.6s ease-in-out infinite; }
+  @keyframes timerPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.12); }
+  }
+
+  /* 开始页面（模式选择） */
+  #start-screen {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(180deg, #ffe9d2 0%, #f7c3cf 42%, #b3bce0 78%, #93a2cf 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 30;
+  }
+  #start-screen.hidden { display: none; }
+  #start-screen h1 {
+    font-size: 56px;
+    font-weight: 300;
+    letter-spacing: 12px;
+    color: #4a3f63;
+    margin-bottom: 64px;
+    text-shadow: 0 4px 16px rgba(255,255,255,0.5);
+  }
+  .mode-buttons {
+    display: flex;
+    gap: 48px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  /* 纪念碑谷风模式卡片：柔和圆角、几何感、低饱和色块、等距视角的小立柱装饰 */
+  .mode-card {
+    width: 220px;
+    padding: 0 0 28px;
+    background: rgba(255,255,255,0.45);
+    border: none;
+    border-radius: 20px;          /* 圆角，柔和但仍保留几何感 */
+    cursor: pointer;
+    transition: transform 0.25s cubic-bezier(.2,.7,.3,1), background 0.25s;
+    text-align: center;
+    font-family: inherit;
+    overflow: hidden;
+    position: relative;
+  }
+  .mode-card:hover {
+    transform: translateY(-8px);
+    background: rgba(255,255,255,0.65);
+  }
+  .mode-card:hover .mode-icon::before {
+    transform: translateY(-4px);  /* 悬浮时几何体微微抬起 */
+  }
+  /* 顶部色带：每张卡片一个纪念碑谷低饱和主色 */
+  .mode-card[data-mode="normal"] { box-shadow: 0 12px 32px rgba(74,63,99,0.15); }
+  .mode-card[data-mode="normal"] .mode-icon { background: #a8cfc0; }  /* 薄荷绿 */
+  .mode-card[data-mode="timed"]  { box-shadow: 0 12px 32px rgba(74,63,99,0.15); }
+  .mode-card[data-mode="timed"]  .mode-icon { background: #f2b8a0; }  /* 珊瑚蜜桃 */
+
+  /* 几何图标容器：等距视角的悬浮立柱 */
+  .mode-icon {
+    height: 120px;
+    position: relative;
+    transition: background 0.25s;
+  }
+  /* 立柱顶面 + 侧面，用 CSS 伪元素拼出等距立方体 */
+  .mode-icon::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 56px;
+    height: 56px;
+    transform: translate(-50%, -55%) rotate(45deg) scaleY(0.58);
+    transition: transform 0.25s cubic-bezier(.2,.7,.3,1);
+  }
+  /* 方形顶（普通模式）：深一档的同色块 */
+  .mode-icon[data-shape="box"]::before {
+    background: #7fb3a3;
+    box-shadow: 18px 18px 0 #5e8c7d;  /* 右下侧面阴影，制造立体感 */
+  }
+  /* 圆形顶（限时模式）：用 radial 模拟圆柱顶 */
+  .mode-icon[data-shape="cylinder"]::before {
+    background: #d99880;
+    border-radius: 50%;
+    box-shadow: 14px 18px 0 #b87a64;
+  }
+  /* 立柱底座：浅色长条，像悬浮建筑的柱身 */
+  .mode-icon::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    width: 20px;
+    height: 28px;
+    transform: translateX(-50%);
+    background: rgba(74,63,99,0.18);
+  }
+  .mode-card .mode-name {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #4a3f63;
+    margin: 18px 0 8px;
+  }
+  .mode-card .mode-desc {
+    font-size: 13px;
+    color: #7a6f92;
+    line-height: 1.6;
+    padding: 0 16px;
+  }
+</style>
+</head>
+<body>
+  <div id="game-container"></div>
+  <div id="start-screen">
+    <h1>跳一跳</h1>
+    <div class="mode-buttons">
+      <div class="mode-card" data-mode="normal">
+        <div class="mode-icon" data-shape="box"></div>
+        <div class="mode-name">普通模式</div>
+        <div class="mode-desc">不限时间，慢慢挑战自我极限</div>
+      </div>
+      <div class="mode-card" data-mode="timed">
+        <div class="mode-icon" data-shape="cylinder"></div>
+        <div class="mode-name">限时模式</div>
+        <div class="mode-desc">30 秒倒计时，落地加时，争分夺秒</div>
+      </div>
+    </div>
+  </div>
+  <div id="score">0</div>
+  <div id="timer"></div>
+  <div id="combo"></div>
+  <div id="power-bar-container"><div id="power-bar"></div></div>
+  <div id="game-over">
+    <h2 id="game-over-title">游戏结束</h2>
+    <p id="game-over-reason"></p>
+    <p>你的得分：<span id="final-score">0</span></p>
+    <p id="best-score-line">历史最高：<span id="best-score">0</span></p>
+    <p id="new-record" class="new-record">★ 新纪录！</p>
+    <button id="restart-btn">重新开始</button>
+    <p class="restart-hint">或按 空格 / 回车 / R 重新开始</p>
+    <div class="mode-switch">
+      <span class="mode-switch-label">切换模式：</span>
+      <button class="mode-switch-btn" data-mode="normal">普通</button>
+      <button class="mode-switch-btn" data-mode="timed">限时</button>
+    </div>
+  </div>
+  <div id="hint">按住鼠标蓄力，松开跳跃 · 连跳得高分 · 踩移动平台加时 · 蓄力中按空格取消</div>
+
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+  <script type="module">
+  import * as THREE from 'three';
+
+  (function () {
+    'use strict';
+
+    // ============ 常量配置（方便之后调整） ============
+    const CONFIG = {
+      // 小人跳跃
+      maxPowerTime: 1200,        // 蓄力到最大所需毫秒
+      jumpDistanceMin: 2.5,      // 最小跳跃水平距离
+      jumpDistanceMax: 7.5,      // 最大跳跃水平距离
+      jumpHeight: 3.5,           // 跳跃最高点
+
+      // 平台
+      boxSizeMin: 1.3,           // 平台最小边长
+      boxSizeMax: 2.6,           // 平台最大边长
+      boxHeight: 1.2,            // 立方体高度
+      minGap: 1.5,               // 平台间最小缝隙（边缘到边缘）
+      maxGap: 3.5,               // 平台间最大缝隙
+
+      // 相机
+      cameraOffset: new THREE.Vector3(7, 9, 7),  // 相对小人的偏移（略远，保证前方平台在视野内）
+      cameraLerp: 0.08,          // 相机平滑跟随系数
+
+      // 颜色（纪念碑谷低饱和配色）
+      boxColors: [
+        0xf2b8a0,  // 珊瑚蜜桃
+        0xa8cfc0,  // 薄荷绿
+        0xb8a9d4,  // 薰衣草紫
+        0xf2d8a0,  // 暖杏黄
+        0x9fb4d4,  // 灰蓝
+        0xe8a4b8   // 蔷薇粉
+      ],
+
+      // 新玩法配置
+      landTolerance: 0.15,        // 落地容差：玩家体积带来的判定放宽
+      moveBoxChance: 0.3,         // 平台为移动平台的概率
+      moveBoxRange: 1.6,          // 移动平台摆动幅度（半幅）
+      moveBoxSpeed: 0.8,          // 移动平台摆动速度（弧度/秒）
+      comboWindow: 2000,          // 连跳判定窗口（毫秒），上次落地到本次落地间隔
+      comboMaxBonus: 5,           // 连跳单次最高额外加分
+      timeLimitMode: true,        // 是否启用限时模式
+      timeLimitStart: 30,         // 限时模式初始秒数
+      timeLimitBonus: 2,          // 每次成功落地奖励秒数
+      timeLimitMax: 45            // 限时模式时间上限
+    };
+
+    // ============ 场景初始化 ============
+    const scene = new THREE.Scene();
+    // 背景用 CSS 渐变天空，场景不设底色
+    // 雾效：远处平台朦胧融入背景，相机靠近自然清晰，营造"随镜头进入"的纵深感
+    // near=8 当前平台清晰，far=24 远处预生成平台完全融入雾中不可见
+    scene.fog = new THREE.Fog(0xf7c3cf, 8, 24);
+
+    // 相机：斜 45 度俯视
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+
+    // 渲染器（alpha: true 让画布透明，透出页面渐变背景）
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setClearColor(0x000000, 0);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.getElementById('game-container').appendChild(renderer.domElement);
+
+    // ============ 灯光（纪念碑谷：明亮柔和、暖色直射光） ============
+    // 环境光：整体提亮，带一点粉调
+    const ambientLight = new THREE.AmbientLight(0xfff0e6, 0.85);
+    scene.add(ambientLight);
+
+    // 方向光：产生柔和阴影，暖白色
+    const dirLight = new THREE.DirectionalLight(0xfff5e8, 0.75);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 50;
+    dirLight.shadow.camera.left = -10;
+    dirLight.shadow.camera.right = 10;
+    dirLight.shadow.camera.top = 10;
+    dirLight.shadow.camera.bottom = -10;
+    dirLight.shadow.bias = -0.0005;          // 防止阴影条纹
+    dirLight.shadow.normalBias = 0.02;       // 曲面阴影更干净
+    scene.add(dirLight);
+    scene.add(dirLight.target);  // 方向光需要 target 才能正确计算方向
+
+    // 地面：接收阴影
+    const groundGeo = new THREE.PlaneGeometry(100, 100);
+    const groundMat = new THREE.ShadowMaterial({ opacity: 0.22 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // ============ 天空盒：渐变穹顶（shader 球体，BackSide 从内看） ============
+    const skyGeo = new THREE.SphereGeometry(80, 32, 16);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: {
+        topColor:    { value: new THREE.Color(0x8fa0cf) },  // 天顶：蓝紫
+        midColor:    { value: new THREE.Color(0xf2b8c8) },  // 中间：粉
+        bottomColor: { value: new THREE.Color(0xffe3c4) }   // 地平线：蜜桃
+      },
+      vertexShader: `
+        varying vec3 vDir;
+        void main() {
+          vDir = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 midColor;
+        uniform vec3 bottomColor;
+        varying vec3 vDir;
+        void main() {
+          float h = vDir.y;
+          vec3 col = h > 0.0
+            ? mix(midColor, topColor, pow(h, 0.6))
+            : mix(midColor, bottomColor, pow(-h, 0.6));
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `
+    });
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(sky);
+
+    // ============ 漂浮装饰：远处的几何体，缓慢旋转浮动 ============
+    // 放在天空高处，不受雾影响（fog:false）保证可见，高度避开相机到平台的视线
+    const floaters = [];
+    function spawnFloater(nearX, nearZ) {
+      const size = 0.4 + Math.random() * 1.0;
+      const geo = new THREE.BoxGeometry(size, size * (1.5 + Math.random()), size);
+      const color = CONFIG.boxColors[Math.floor(Math.random() * CONFIG.boxColors.length)];
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.7, transparent: true, opacity: 0.6, fog: false });
+      const m = new THREE.Mesh(geo, mat);
+      // 放在周围 18~30 距离、天空高处（y=8~15），在画面上方天空区域可见，不挡下方平台
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 18 + Math.random() * 12;
+      m.position.set(
+        nearX + Math.cos(angle) * dist,
+        8 + Math.random() * 7,  // 天空区域，高于平台、在相机俯视的画面上方
+        nearZ + Math.sin(angle) * dist
+      );
+      m.rotation.set(Math.random(), Math.random() * Math.PI, Math.random());
+      m.userData = { baseY: m.position.y, phase: Math.random() * Math.PI * 2, spin: 0.1 + Math.random() * 0.3 };
+      scene.add(m);
+      floaters.push(m);
+    }
+    for (let i = 0; i < 8; i++) spawnFloater(0, 0);
+
+    // ============ 小人：纪念碑谷风火烈鸟（极简几何拼搭） ============
+    // 以 Group 原点为玩家中心，脚底在 y=-0.5，面朝 +z 方向建模
+    // 用 scale 整体放大 1.6 倍，方便统一调整体型
+    function buildFlamingo() {
+      const bird = new THREE.Group();
+
+      // 亮粉配色（保持喙尖/眼睛深色形成对比）
+      const C = {
+        body: 0xff5fa2,      // 亮粉：身体/颈/头
+        wing: 0xff3d8a,      // 深亮粉：尾羽
+        leg: 0xff7fb5,       // 浅亮粉：腿
+        beakBase: 0xfff0f5,  // 喙基部：白粉
+        beakTip: 0x2a1f33,   // 喙尖：深紫黑
+        eye: 0x1a1024        // 眼睛：近黑
+      };
+
+      // 快捷添加部件
+      function add(geo, color, x, y, z, rx) {
+        const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.6 }));
+        m.position.set(x, y, z);
+        if (rx) m.rotation.x = rx;
+        m.castShadow = true;
+        bird.add(m);
+        return m;
+      }
+
+      // 站立的腿（脚底 y=-0.5，正好落在平台面）
+      add(new THREE.CylinderGeometry(0.018, 0.018, 0.5, 8), C.leg, 0, -0.25, 0);
+      // 站立脚：扁平三角脚掌，朝前（喙朝 +z，脚也朝 +z）
+      add(new THREE.ConeGeometry(0.045, 0.06, 8), C.leg, 0, -0.49, 0.02, -Math.PI / 2);
+      // 抬起的腿：向后勾起，火烈鸟经典单腿站姿
+      add(new THREE.CylinderGeometry(0.015, 0.015, 0.24, 8), C.leg, 0, -0.12, -0.12, -1.25);
+      // 抬起的脚：小腿末端的小脚掌
+      add(new THREE.ConeGeometry(0.035, 0.05, 8), C.leg, 0, -0.24, -0.2, Math.PI * 0.65);
+      // 身体：微压扁的椭球
+      const bodyMesh = add(new THREE.SphereGeometry(0.26, 20, 16), C.body, 0, 0.16, 0);
+      bodyMesh.scale.set(0.95, 0.8, 1.2);
+      // 尾羽：向后上方翘起
+      add(new THREE.ConeGeometry(0.1, 0.24, 10), C.wing, 0, 0.26, -0.3, -Math.PI * 0.62);
+      // 长颈：竖直微前倾
+      add(new THREE.CylinderGeometry(0.045, 0.05, 0.32, 10), C.body, 0, 0.44, 0.16, 0.14);
+      // 头
+      add(new THREE.SphereGeometry(0.085, 16, 12), C.body, 0, 0.63, 0.21);
+      // 喙基部：米白，朝前
+      add(new THREE.ConeGeometry(0.034, 0.1, 8), C.beakBase, 0, 0.615, 0.3, Math.PI / 2);
+      // 喙尖：深色、向下勾（火烈鸟标志）
+      add(new THREE.ConeGeometry(0.027, 0.08, 8), C.beakTip, 0, 0.575, 0.345, Math.PI * 0.72);
+      // 眼睛：两个小黑点
+      add(new THREE.SphereGeometry(0.013, 8, 6), C.eye, 0.055, 0.65, 0.27);
+      add(new THREE.SphereGeometry(0.013, 8, 6), C.eye, -0.055, 0.65, 0.27);
+
+      // 整体放大 1.6 倍（统一缩放，不影响各部件相对关系）
+      bird.scale.setScalar(1.6);
+
+      return bird;
+    }
+
+    const player = buildFlamingo();
+    // 记录基础缩放（火烈鸟体型放大倍数），蓄力压缩和重置都基于此
+    const PLAYER_BASE_SCALE = 1.6;
+    // 脚底本地 y = -0.5，放大后变 -0.8，所以玩家中心 y = 平台面 + 0.8
+    const PLAYER_FOOT_OFFSET = 0.5 * PLAYER_BASE_SCALE;
+    player.position.set(0, CONFIG.boxHeight + PLAYER_FOOT_OFFSET, 0);
+    scene.add(player);
+
+    // ============ 粒子系统（固定池，避免频繁创建销毁） ============
+    const P_MAX = 400;
+    const pPos = new Float32Array(P_MAX * 3);
+    const pCol = new Float32Array(P_MAX * 3);
+    const pVel = new Float32Array(P_MAX * 3);
+    const pLife = new Float32Array(P_MAX);       // 剩余寿命，<=0 表示空闲
+    for (let i = 0; i < P_MAX; i++) pPos[i * 3 + 1] = -999;  // 空闲粒子藏起来
+
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+    const pMat = new THREE.PointsMaterial({
+      size: 0.09, vertexColors: true,
+      transparent: true, opacity: 0.95, depthWrite: false
+    });
+    const pPoints = new THREE.Points(pGeo, pMat);
+    pPoints.frustumCulled = false;  // 粒子位置动态变化，关闭视锥剔除
+    scene.add(pPoints);
+    let pCursor = 0;  // 环形指针
+
+    // 生成单个粒子
+    function spawnParticle(x, y, z, vx, vy, vz, color, life) {
+      const i = pCursor;
+      pCursor = (pCursor + 1) % P_MAX;
+      pPos[i * 3] = x; pPos[i * 3 + 1] = y; pPos[i * 3 + 2] = z;
+      pVel[i * 3] = vx; pVel[i * 3 + 1] = vy; pVel[i * 3 + 2] = vz;
+      const c = new THREE.Color(color);
+      pCol[i * 3] = c.r; pCol[i * 3 + 1] = c.g; pCol[i * 3 + 2] = c.b;
+      pLife[i] = life;
+    }
+
+    // 落地爆发：彩色粒子向四周散开
+    function spawnBurst(pos, color) {
+      for (let i = 0; i < 28; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const speed = 1.5 + Math.random() * 2.5;
+        spawnParticle(
+          pos.x, pos.y - 0.3, pos.z,
+          Math.cos(a) * speed, 2 + Math.random() * 2.5, Math.sin(a) * speed,
+          Math.random() < 0.6 ? color : 0xffffff,
+          0.6 + Math.random() * 0.5
+        );
+      }
+    }
+
+    // 蓄力聚集：粒子从四周向小人收拢
+    function spawnGather(pos) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 1.6;
+      const x = pos.x + Math.cos(a) * r;
+      const z = pos.z + Math.sin(a) * r;
+      spawnParticle(
+        x, pos.y - 0.4 + Math.random() * 0.3, z,
+        (pos.x - x) * 2.2, 0.5, (pos.z - z) * 2.2,
+        0xffffff, 0.5
+      );
+    }
+
+    // 跳跃尾迹
+    function spawnTrail(pos) {
+      spawnParticle(
+        pos.x + (Math.random() - 0.5) * 0.2,
+        pos.y - 0.3,
+        pos.z + (Math.random() - 0.5) * 0.2,
+        0, 0.3, 0,
+        0xffffff, 0.45
+      );
+    }
+
+    // 每帧更新粒子：运动 + 重力 + 寿命
+    function updateParticles(delta) {
+      for (let i = 0; i < P_MAX; i++) {
+        if (pLife[i] <= 0) continue;
+        pLife[i] -= delta;
+        if (pLife[i] <= 0) { pPos[i * 3 + 1] = -999; continue; }
+        pVel[i * 3 + 1] -= 9 * delta;  // 粒子受重力
+        pPos[i * 3]     += pVel[i * 3] * delta;
+        pPos[i * 3 + 1] += pVel[i * 3 + 1] * delta;
+        pPos[i * 3 + 2] += pVel[i * 3 + 2] * delta;
+      }
+      pGeo.attributes.position.needsUpdate = true;
+      pGeo.attributes.color.needsUpdate = true;
+    }
+
+    // ============ 平台管理 ============
+    const boxes = [];  // 所有平台
+
+    // 平台形状池：立方体 / 圆柱 / 三棱柱 / 六棱柱
+    const SHAPES = ['box', 'cylinder', 'prism3', 'prism6'];
+
+    // 按形状生成几何体（s = 占地尺寸，h = 高度，shrink = 收窄比例，用于柱座）
+    function makeShapeGeo(shape, s, h, shrink) {
+      const k = shrink || 1;
+      switch (shape) {
+        case 'box':
+          return new THREE.BoxGeometry(s * k, h, s * k);
+        case 'cylinder':
+          return new THREE.CylinderGeometry(s * k / 2, s * k / 2, h, 32);
+        case 'prism3':
+          return new THREE.CylinderGeometry(s * k / 2, s * k / 2, h, 3);
+        case 'prism6':
+          return new THREE.CylinderGeometry(s * k / 2, s * k / 2, h, 6);
+      }
+    }
+
+    // 创建单个平台（形状/尺寸随机，记录自身 size 和 shape 供落地检测用）
+    // 首个平台（forceShape 传入时）不赋予移动属性，保证开局稳定
+    function createBox(x, z, size, forceShape) {
+      const s = size || (CONFIG.boxSizeMin + Math.random() * (CONFIG.boxSizeMax - CONFIG.boxSizeMin));
+      const shape = forceShape || SHAPES[Math.floor(Math.random() * SHAPES.length)];
+      const color = CONFIG.boxColors[Math.floor(Math.random() * CONFIG.boxColors.length)];
+      const group = new THREE.Group();
+
+      // 顶部主块（站立面）——完全不透明，平台一直存在于场景中，靠雾效控制远近可见度
+      const topGeo = makeShapeGeo(shape, s, CONFIG.boxHeight);
+      const topMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
+      const top = new THREE.Mesh(topGeo, topMat);
+      top.position.y = CONFIG.boxHeight / 2;
+      top.castShadow = true;
+      top.receiveShadow = true;
+      // 棱柱随机转个角度，视觉更自然
+      if (shape === 'prism3' || shape === 'prism6') {
+        top.rotation.y = Math.random() * Math.PI * 2;
+      }
+      group.add(top);
+
+      // 平台一直存在于场景中，不做事变透明度动画（靠雾效控制远近可见度）
+      group.position.set(x, 0, z);
+      scene.add(group);
+
+      // 移动平台属性：30% 概率（首个平台 forceShape 传入时不移动）
+      // 沿生成方向的垂直方向来回摆动，玩家需要预判落点
+      let move = null;
+      if (!forceShape && Math.random() < CONFIG.moveBoxChance) {
+        // 摆动方向：与平台生成方向无关，随机选 x 或 z 轴
+        const axis = Math.random() < 0.5 ? 'x' : 'z';
+        move = {
+          axis,
+          base: axis === 'x' ? x : z,           // 摆动中心
+          phase: Math.random() * Math.PI * 2,   // 初始相位，避免所有移动平台同步
+          range: CONFIG.moveBoxRange * (0.6 + Math.random() * 0.4),  // 摆动半幅
+          speed: CONFIG.moveBoxSpeed * (0.7 + Math.random() * 0.6)   // 摆动角速度
+        };
+        // 给移动平台顶部加个细环标记，方便玩家识别
+        const ringGeo = new THREE.TorusGeometry(s * 0.35, 0.04, 8, 24);
+        const ringMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = CONFIG.boxHeight + 0.02;
+        ring.castShadow = true;
+        group.add(ring);
+      }
+
+      boxes.push({ mesh: group, x, z, size: s, shape, color, move });
+      return group;
+    }
+
+    // 生成下一个平台（随机方向 + 随机尺寸 + 随机缝隙）
+    // 中心距 = 前平台半径 + 新平台半径 + 缝隙，保证不重叠也跳得到
+    function generateNextBox(fromBox) {
+      const angle = Math.random() * Math.PI * 0.5 + Math.PI * 0.25;  // 45°~135°
+      const newSize = CONFIG.boxSizeMin + Math.random() * (CONFIG.boxSizeMax - CONFIG.boxSizeMin);
+      const gap = CONFIG.minGap + Math.random() * (CONFIG.maxGap - CONFIG.minGap);
+      const distance = fromBox.size / 2 + newSize / 2 + gap;
+      const nextX = fromBox.x + Math.cos(angle) * distance;
+      const nextZ = fromBox.z + Math.sin(angle) * distance;
+      createBox(nextX, nextZ, newSize);
+    }
+
+    // 预生成前方 N 个平台（从最后一个平台链式生成），远的在雾里不可见，相机靠近自然浮现
+    const PLATFORM_AHEAD = 4;
+    function generateAheadBuffer() {
+      for (let i = 0; i < PLATFORM_AHEAD; i++) {
+        generateNextBox(boxes[boxes.length - 1]);
+      }
+    }
+
+    // ============ 游戏状态 ============
+    let state = {
+      score: 0,
+      isCharging: false,      // 是否正在蓄力
+      chargeStartTime: 0,     // 蓄力开始时间
+      isJumping: false,       // 是否正在跳跃
+      jumpFrom: null,         // 起跳位置
+      jumpTo: null,           // 落点位置
+      jumpDuration: 0,        // 跳跃总时长
+      jumpElapsed: 0,         // 已跳时间
+      currentBoxIndex: 0,     // 当前站在哪个平台
+      gameOver: false,
+      started: false,         // 是否已选择模式开始游戏（开始页面门控）
+      standingBoxIndex: -1,   // 当前站立的平台索引（用于跟随移动平台位移）
+      // 连跳玩法
+      combo: 0,               // 当前连击数（每次成功落地且在窗口内 +1，失败归零）
+      lastLandTime: 0,        // 上次落地时间戳（用于连跳窗口判定）
+      // 限时玩法
+      timeRemaining: 0,       // 剩余秒数
+      lastFrameTime: 0        // 上一帧时间戳（用于倒计时累减）
+    };
+
+    // 初始化平台：首个固定为较大的立方体，预生成前方 4 个（远的在雾里不可见）
+    createBox(0, 0, 2, 'box');
+    generateAheadBuffer();
+
+    // 初始化限时模式倒计时
+    state.timeRemaining = CONFIG.timeLimitMode ? CONFIG.timeLimitStart : 0;
+    state.lastFrameTime = performance.now();
+
+    // ============ UI 元素 ============
+    const scoreEl = document.getElementById('score');
+    const powerBarContainer = document.getElementById('power-bar-container');
+    const powerBar = document.getElementById('power-bar');
+    const gameOverEl = document.getElementById('game-over');
+    const finalScoreEl = document.getElementById('final-score');
+    const restartBtn = document.getElementById('restart-btn');
+    const comboEl = document.getElementById('combo');
+    const timerEl = document.getElementById('timer');
+    const bestScoreEl = document.getElementById('best-score');
+    const newRecordEl = document.getElementById('new-record');
+
+    // 历史最高分（localStorage 持久化）
+    const STORAGE_KEY = 'jump_best_score';
+    let bestScore = 0;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) bestScore = parseInt(saved, 10) || 0;
+    } catch (e) { /* localStorage 不可用时静默降级 */ }
+    bestScoreEl.textContent = bestScore;
+
+    // 显示连击数（右上角），带 pulse 动画
+    function showCombo(n) {
+      if (n < 2) {
+        comboEl.classList.remove('visible');
+        return;
+      }
+      comboEl.textContent = '连击 x' + n;
+      comboEl.classList.add('visible');
+      comboEl.classList.remove('pulse');
+      void comboEl.offsetWidth;  // 强制重排，让动画可重复触发
+      comboEl.classList.add('pulse');
+    }
+
+    // 更新倒计时显示
+    function updateTimer() {
+      if (!CONFIG.timeLimitMode || !state.started) { timerEl.textContent = ''; return; }
+      const t = Math.max(0, state.timeRemaining);
+      timerEl.textContent = t.toFixed(1) + 's';
+      // 剩余 < 5 秒时变红并闪烁
+      if (t < 5) timerEl.classList.add('urgent');
+      else timerEl.classList.remove('urgent');
+    }
+
+    // ============ 音效（Web Audio 实时合成，无外部音频文件） ============
+    // 注意：浏览器要求首次用户交互后才能出声，在 mousedown 时初始化
+    let audioCtx = null;
+    let chargeOsc = null, chargeGain = null;  // 蓄力持续音
+
+    function ensureAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    // 通用单音：频率扫频 + 指数衰减
+    function playTone(freqStart, freqEnd, dur, type, vol) {
+      ensureAudio();
+      if (!audioCtx) return;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freqStart, audioCtx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(Math.max(freqEnd, 1), audioCtx.currentTime + dur);
+      g.gain.setValueAtTime(vol, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+      o.connect(g).connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + dur);
+    }
+
+    // 蓄力开始：持续正弦音，音调随蓄力上升
+    function startChargeSound() {
+      ensureAudio();
+      if (!audioCtx) return;
+      chargeOsc = audioCtx.createOscillator();
+      chargeGain = audioCtx.createGain();
+      chargeOsc.type = 'sine';
+      chargeOsc.frequency.value = 180;
+      chargeGain.gain.value = 0.04;
+      chargeOsc.connect(chargeGain).connect(audioCtx.destination);
+      chargeOsc.start();
+    }
+    function updateChargeSound(power) {
+      if (chargeOsc) chargeOsc.frequency.value = 180 + power * 420;
+    }
+    function stopChargeSound() {
+      if (chargeOsc) {
+        chargeOsc.stop();
+        chargeOsc.disconnect();
+        chargeOsc = null;
+      }
+    }
+
+    // 起跳：快速上滑 whoosh
+    function playJump() { playTone(300, 700, 0.18, 'triangle', 0.1); }
+
+    // ============ 落地音效：纪念碑谷式管弦质感 ============
+    // C 大调五声音阶（C D E G A），从高到低跨 2 个八度，怎么弹都和谐
+    const SCALE = [2093.0, 1760.0, 1568.0, 1318.5, 1174.7, 1046.5, 880.0, 784.0, 659.3, 587.3, 523.3];
+
+    // 平台尺寸 → 音高：小平台音高，大平台音低
+    function sizeToFreq(size) {
+      const t = (size - CONFIG.boxSizeMin) / (CONFIG.boxSizeMax - CONFIG.boxSizeMin);
+      const idx = Math.round(Math.min(Math.max(t, 0), 1) * (SCALE.length - 1));
+      return SCALE[idx];
+    }
+
+    // 管弦单音：失谐弦乐层 + 高八度泛音 + 简易回声，营造空旷礼堂感
+    function playLand(freq) {
+      ensureAudio();
+      if (!audioCtx) return;
+      const t = audioCtx.currentTime;
+
+      // 低通滤波柔化高频，音色更圆润
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 3200;
+      filter.connect(audioCtx.destination);
+
+      // 简易回声：140ms 延迟、25% 音量，模拟大厅混响尾巴
+      const delay = audioCtx.createDelay();
+      delay.delayTime.value = 0.14;
+      const delayGain = audioCtx.createGain();
+      delayGain.gain.value = 0.25;
+      filter.connect(delay);
+      delay.connect(delayGain);
+      delayGain.connect(audioCtx.destination);
+
+      // 弦乐主体：3 个微失谐三角波叠加（-6/0/+6 音分），慢起音像弓弦
+      [-6, 0, 6].forEach(cents => {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = freq;
+        o.detune.value = cents;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.08, t + 0.04);   // 40ms 起音
+        g.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+        o.connect(g).connect(filter);
+        o.start(t);
+        o.stop(t + 1.1);
+      });
+
+      // 高八度泛音：钟琴般的光泽
+      const o2 = audioCtx.createOscillator();
+      const g2 = audioCtx.createGain();
+      o2.type = 'sine';
+      o2.frequency.value = freq * 2;
+      g2.gain.setValueAtTime(0, t);
+      g2.gain.linearRampToValueAtTime(0.045, t + 0.02);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      o2.connect(g2).connect(filter);
+      o2.start(t);
+      o2.stop(t + 0.55);
+
+      // 十二度泛音：极轻，增加空气感
+      const o3 = audioCtx.createOscillator();
+      const g3 = audioCtx.createGain();
+      o3.type = 'sine';
+      o3.frequency.value = freq * 3;
+      g3.gain.setValueAtTime(0, t);
+      g3.gain.linearRampToValueAtTime(0.02, t + 0.02);
+      g3.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      o3.connect(g3).connect(filter);
+      o3.start(t);
+      o3.stop(t + 0.35);
+    }
+
+    // 掉落：低音下坠
+    function playFall() { playTone(240, 50, 0.5, 'sawtooth', 0.08); }
+
+    // ============ 相机初始位置 ============
+    // 记录当前 lookAt 点，用于平滑过渡（避免每帧 new 对象）
+    const _lookAtCurrent = player.position.clone();
+    camera.position.copy(player.position).add(CONFIG.cameraOffset);
+    camera.lookAt(_lookAtCurrent);
+
+    // ============ 输入处理 ============
+    function onChargeStart() {
+      if (!state.started || state.gameOver || state.isJumping) return;
+      ensureAudio();  // 第一次按下就初始化音频上下文，避免首次落地音效延迟
+      state.isCharging = true;
+      state.chargeStartTime = performance.now();
+      powerBarContainer.classList.add('visible');
+      startChargeSound();  // 蓄力音：音调随时间上升
+    }
+
+    function onChargeEnd() {
+      if (!state.isCharging || state.gameOver) return;
+      state.isCharging = false;
+      powerBarContainer.classList.remove('visible');
+      stopChargeSound();
+      playJump();  // 起跳 whoosh
+
+      // 计算蓄力比例（0~1）
+      const chargeTime = Math.min(performance.now() - state.chargeStartTime, CONFIG.maxPowerTime);
+      const power = chargeTime / CONFIG.maxPowerTime;
+
+      // 朝向下一个平台中心的方向
+      // 用平台实时位置（移动平台已偏移时方向仍准确），玩家位置作为起点
+      const nextBox = boxes[state.currentBoxIndex + 1];
+      const nextRealPos = new THREE.Vector3(nextBox.mesh.position.x, 0, nextBox.mesh.position.z);
+      const direction = nextRealPos.clone().sub(new THREE.Vector3(player.position.x, 0, player.position.z)).normalize();
+
+      // 火烈鸟转向跳跃方向（模型面朝 +z 建造）
+      player.rotation.y = Math.atan2(direction.x, direction.z);
+
+      // 跳跃水平距离：蓄力决定
+      const distance = CONFIG.jumpDistanceMin + (CONFIG.jumpDistanceMax - CONFIG.jumpDistanceMin) * power;
+      const targetPos = player.position.clone().add(direction.clone().multiplyScalar(distance));
+      targetPos.y = CONFIG.boxHeight + PLAYER_FOOT_OFFSET;
+
+      // 记录跳跃参数，动画里做抛物线插值
+      state.jumpFrom = player.position.clone();
+      state.jumpTo = targetPos;
+      state.jumpDuration = 0.55;  // 固定时长，手感稳定
+      state.jumpElapsed = 0;
+      state.isJumping = true;
+      state.standingBoxIndex = -1;  // 起跳后不再跟随平台
+
+      // 小人压缩回弹动画（基于基础缩放）
+      player.scale.set(PLAYER_BASE_SCALE, PLAYER_BASE_SCALE, PLAYER_BASE_SCALE);
+    }
+
+    // 取消蓄力：不跳跃，恢复小人，停掉蓄力音效
+    function cancelCharge() {
+      if (!state.isCharging) return;
+      state.isCharging = false;
+      powerBarContainer.classList.remove('visible');
+      stopChargeSound();
+      player.scale.set(PLAYER_BASE_SCALE, PLAYER_BASE_SCALE, PLAYER_BASE_SCALE);  // 恢复体型
+    }
+
+    // 鼠标事件
+    window.addEventListener('mousedown', onChargeStart);
+    window.addEventListener('mouseup', onChargeEnd);
+
+    // 触摸事件（移动端）
+    window.addEventListener('touchstart', (e) => { e.preventDefault(); onChargeStart(); });
+    window.addEventListener('touchend', (e) => { e.preventDefault(); onChargeEnd(); });
+
+    // 重新开始（点击按钮）
+    restartBtn.addEventListener('click', resetGame);
+
+    // 键盘：游戏结束后重开 / 蓄力中按空格取消蓄力
+    window.addEventListener('keydown', (e) => {
+      // 游戏结束：空格/回车/R 重新开始
+      if (state.gameOver) {
+        if (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR') {
+          e.preventDefault();
+          resetGame();
+        }
+        return;
+      }
+      // 蓄力中：按空格取消蓄力（不跳跃）
+      if (e.code === 'Space' && state.isCharging) {
+        e.preventDefault();
+        cancelCharge();
+      }
+    });
+
+    // ============ 开始页面：模式选择 ============
+    const startScreen = document.getElementById('start-screen');
+
+    // 选择模式并开始游戏（resetGame 会按当前 CONFIG.timeLimitMode 初始化倒计时）
+    function startGame(mode) {
+      CONFIG.timeLimitMode = (mode === 'timed');
+      state.started = true;
+      startScreen.classList.add('hidden');
+      resetGame();  // 统一走重置流程，初始化平台/状态/倒计时
+    }
+
+    // 绑定两个模式卡片
+    document.querySelectorAll('.mode-card').forEach(card => {
+      card.addEventListener('click', () => startGame(card.dataset.mode));
+    });
+
+    // 结束界面模式切换按钮：更新激活态 + 切换模式重玩
+    const modeSwitchBtns = document.querySelectorAll('.mode-switch-btn');
+    function updateModeSwitchActive() {
+      const currentMode = CONFIG.timeLimitMode ? 'timed' : 'normal';
+      modeSwitchBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === currentMode);
+      });
+    }
+    modeSwitchBtns.forEach(btn => {
+      btn.addEventListener('click', () => startGame(btn.dataset.mode));
+    });
+
+    // ============ 游戏重置 ============
+    function resetGame() {
+      // 清除旧平台（平台是 Group，遍历子网格释放 geometry/material）
+      boxes.forEach(b => {
+        scene.remove(b.mesh);
+        b.mesh.children.forEach(c => {
+          c.geometry.dispose();
+          c.material.dispose();
+        });
+      });
+      boxes.length = 0;
+
+      // 重建初始平台：首个 + 预生成前方 4 个
+      createBox(0, 0, 2, 'box');
+      generateAheadBuffer();
+
+      // 重置小人
+      player.position.set(0, CONFIG.boxHeight + PLAYER_FOOT_OFFSET, 0);
+      player.scale.set(PLAYER_BASE_SCALE, PLAYER_BASE_SCALE, PLAYER_BASE_SCALE);
+      player.rotation.y = 0;
+
+      // 重置状态
+      state.score = 0;
+      state.isCharging = false;
+      state.isJumping = false;
+      state.jumpFrom = null;
+      state.jumpTo = null;
+      state.currentBoxIndex = 0;
+      state.gameOver = false;
+      state.standingBoxIndex = -1;  // 清空站立平台
+      // 连跳玩法重置
+      state.combo = 0;
+      state.lastLandTime = 0;
+      // 限时玩法重置
+      state.timeRemaining = CONFIG.timeLimitMode ? CONFIG.timeLimitStart : 0;
+      state.lastFrameTime = performance.now();
+
+      scoreEl.textContent = '0';
+      gameOverEl.classList.remove('visible');
+      powerBarContainer.classList.remove('visible');  // 保险：隐藏可能残留的蓄力条
+      stopChargeSound();                              // 保险：停掉可能残留的蓄力音
+      comboEl.classList.remove('visible');            // 隐藏连击
+      timerEl.classList.remove('urgent');             // 取消倒计时警告样式
+      updateTimer();                                  // 刷新倒计时显示
+
+      // 相机复位
+      camera.position.copy(player.position).add(CONFIG.cameraOffset);
+      _lookAtCurrent.copy(player.position);
+    }
+
+    // ============ 游戏结束 ============
+    // reason: 'fall'（掉落）或 'timeout'（超时）
+    function showGameOver(reason) {
+      if (state.gameOver) return;  // 防止重复触发
+      state.gameOver = true;
+      const reasonEl = document.getElementById('game-over-reason');
+      const titleEl = document.getElementById('game-over-title');
+      if (reason === 'timeout') {
+        titleEl.textContent = '时间到';
+        reasonEl.textContent = '在限定时间内你跳了这么远';
+      } else {
+        titleEl.textContent = '游戏结束';
+        reasonEl.textContent = '小心，下面是悬崖';
+        playFall();  // 下坠低音（仅掉落时播放）
+      }
+      finalScoreEl.textContent = state.score;
+
+      // 历史最高分判断：超过则更新 localStorage 并显示新纪录
+      const isNewRecord = state.score > bestScore;
+      if (isNewRecord) {
+        bestScore = state.score;
+        try { localStorage.setItem(STORAGE_KEY, String(bestScore)); } catch (e) {}
+        bestScoreEl.textContent = bestScore;
+        newRecordEl.classList.add('visible');
+      } else {
+        newRecordEl.classList.remove('visible');
+      }
+
+      updateModeSwitchActive();  // 高亮当前模式，方便玩家切换
+      gameOverEl.classList.add('visible');
+    }
+
+    // ============ 飘分 +1 动画 ============
+    // 把 3D 世界坐标投影到屏幕像素坐标，在该位置生成 +1 元素
+    function showPlusOne(worldPos, gain) {
+      const screenPos = worldPos.clone().project(camera);
+      const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
+
+      const el = document.createElement('div');
+      el.className = 'plus-one';
+      el.textContent = '+' + (gain || 1);  // 支持连击多分
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      // 连击高分时字体放大，视觉反馈更强
+      if (gain > 1) el.style.fontSize = (28 + gain * 2) + 'px';
+      document.body.appendChild(el);
+
+      // 动画结束后移除元素，避免 DOM 堆积
+      el.addEventListener('animationend', () => el.remove());
+    }
+
+    // 顶部总分跳动反馈
+    function bumpScore() {
+      scoreEl.classList.remove('bump');
+      void scoreEl.offsetWidth;  // 强制重排，让动画可重复触发
+      scoreEl.classList.add('bump');
+    }
+
+    // ============ 落地检测 ============
+    // 修复点：
+    // 1. 用平台实时位置（b.mesh.position）而非生成时的 b.x/b.z，移动平台也能准确判定
+    // 2. 判定半径加 landTolerance 容差，玩家体积带来的边缘踩中也能算成功
+    // 3. 从 max(0, currentBoxIndex-1) 开始找，覆盖跳过头到下下个平台的极端情况
+    function checkLanding() {
+      if (state.gameOver) return;  // 游戏已结束（如超时）则不再判定
+      let landed = false;
+      const startIdx = Math.max(0, state.currentBoxIndex - 1);
+      for (let i = startIdx; i < boxes.length; i++) {
+        const b = boxes[i];
+        // 用实时位置判定（移动平台的位置在 animate 里更新）
+        const bx = b.mesh.position.x;
+        const bz = b.mesh.position.z;
+        const dx = player.position.x - bx;
+        const dz = player.position.z - bz;
+        // 半径 + 容差（玩家体积），<= 边界也算踩中
+        const half = b.size / 2 + CONFIG.landTolerance;
+        const onPlatform = b.shape === 'box'
+          ? (Math.abs(dx) <= half && Math.abs(dz) <= half)
+          : (dx * dx + dz * dz <= half * half);
+        if (onPlatform) {
+          landed = true;
+          state.currentBoxIndex = i;
+          state.standingBoxIndex = i;  // 记录站立平台，用于跟随移动平台
+
+          // ---- 连跳判定：在窗口内 +1 连击，否则归零 ----
+          const now = performance.now();
+          if (state.lastLandTime > 0 && now - state.lastLandTime <= CONFIG.comboWindow) {
+            state.combo++;
+          } else {
+            state.combo = 1;
+          }
+          state.lastLandTime = now;
+          // 本次得分 = 1 基础 + 连击奖励（连击数-1，封顶）
+          const bonus = Math.min(state.combo - 1, CONFIG.comboMaxBonus);
+          const gain = 1 + bonus;
+          state.score += gain;
+          scoreEl.textContent = state.score;
+          bumpScore();                        // 总分跳动
+          showPlusOne(player.position, gain); // 落点飘出 +N
+          showCombo(state.combo);             // 显示连击
+
+          // ---- 限时模式：每次落地 +奖励秒数，封顶 ----
+          if (CONFIG.timeLimitMode) {
+            state.timeRemaining = Math.min(state.timeRemaining + CONFIG.timeLimitBonus, CONFIG.timeLimitMax);
+          }
+
+          playLand(sizeToFreq(b.size));       // 管弦落地音：小平台音高，大平台音低
+          spawnBurst(player.position, b.color);  // 平台色粒子爆发
+          generateNextBox(boxes[boxes.length - 1]);  // 从最后一个平台链式生成，维持前方缓冲
+          break;
+        }
+      }
+      if (!landed) {
+        // 落空：连击归零
+        state.combo = 0;
+        showCombo(0);
+        showGameOver('fall');
+      }
+    }
+
+    // ============ 动画循环 ============
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = Math.min(clock.getDelta(), 0.05);  // 防止切后台后 delta 过大
+      const elapsedSec = performance.now() * 0.001;    // 用于移动平台的相位计算
+
+      // ---- 移动平台更新（在跳跃/蓄力之外也持续移动） ----
+      for (let i = 0; i < boxes.length; i++) {
+        const b = boxes[i];
+        if (!b.move) continue;
+        const prevX = b.mesh.position.x;
+        const prevZ = b.mesh.position.z;
+        const offset = Math.sin(elapsedSec * b.move.speed + b.move.phase) * b.move.range;
+        if (b.move.axis === 'x') {
+          b.mesh.position.x = b.move.base + offset;
+        } else {
+          b.mesh.position.z = b.move.base + offset;
+        }
+        // 火烈鸟站在该移动平台上时，跟随平台位移（非跳跃状态）
+        if (state.standingBoxIndex === i && !state.isJumping && !state.gameOver) {
+          player.position.x += b.mesh.position.x - prevX;
+          player.position.z += b.mesh.position.z - prevZ;
+        }
+      }
+
+      // ---- 限时模式倒计时（仅在游戏开始后且未结束时扣减） ----
+      if (CONFIG.timeLimitMode && state.started && !state.gameOver) {
+        state.timeRemaining -= delta;
+        if (state.timeRemaining <= 0) {
+          state.timeRemaining = 0;
+          updateTimer();
+          showGameOver('timeout');  // 超时结束（不计为落空，连击不归零）
+        }
+        updateTimer();
+      }
+
+      // ---- 蓄力中：更新蓄力条 + 小人压缩 + 音效/粒子 ----
+      if (state.isCharging) {
+        const chargeTime = Math.min(performance.now() - state.chargeStartTime, CONFIG.maxPowerTime);
+        const power = chargeTime / CONFIG.maxPowerTime;
+        powerBar.style.width = (power * 100) + '%';
+
+        // 小人身体压缩（基于基础缩放）
+        player.scale.y = PLAYER_BASE_SCALE * (1 - power * 0.3);
+        player.scale.x = PLAYER_BASE_SCALE * (1 + power * 0.15);
+        player.scale.z = PLAYER_BASE_SCALE * (1 + power * 0.15);
+
+        updateChargeSound(power);          // 音调随蓄力上升
+        spawnGather(player.position);      // 粒子向小人聚集
+        spawnGather(player.position);
+      }
+
+      // ---- 跳跃中：抛物线插值 ----
+      if (state.isJumping) {
+        state.jumpElapsed += delta;
+        const t = Math.min(state.jumpElapsed / state.jumpDuration, 1);
+
+        // 水平：线性插值
+        player.position.x = state.jumpFrom.x + (state.jumpTo.x - state.jumpFrom.x) * t;
+        player.position.z = state.jumpFrom.z + (state.jumpTo.z - state.jumpFrom.z) * t;
+
+        // 垂直：抛物线（t=0.5 时最高点）
+        const y0 = state.jumpFrom.y;
+        const y1 = state.jumpTo.y;
+        player.position.y = y0 + (y1 - y0) * t + CONFIG.jumpHeight * 4 * t * (1 - t);
+
+        spawnTrail(player.position);  // 跳跃尾迹
+
+        // 跳跃结束
+        if (t >= 1) {
+          state.isJumping = false;
+          checkLanding();
+        }
+      }
+
+      // ---- 特效更新：粒子 / 天空跟随 / 漂浮装饰 ----
+      updateParticles(delta);
+
+      // 天空穹顶跟着小人走，永远包住视野
+      sky.position.copy(player.position);
+
+      // 漂浮装饰：缓慢旋转 + 上下浮动 + 离太远时挪到前方
+      const elapsed = performance.now() * 0.001;
+      floaters.forEach(f => {
+        f.rotation.y += f.userData.spin * delta;
+        f.position.y = f.userData.baseY + Math.sin(elapsed * 0.5 + f.userData.phase) * 0.8;
+        const dx = f.position.x - player.position.x;
+        const dz = f.position.z - player.position.z;
+        if (dx * dx + dz * dz > 45 * 45) {
+          // 挪到小人前方远处高处，保持周围始终有装饰且不挡视线
+          const a = Math.random() * Math.PI * 0.5 + Math.PI * 0.25;
+          const dist = 22 + Math.random() * 12;
+          f.position.x = player.position.x + Math.cos(a) * dist;
+          f.position.z = player.position.z + Math.sin(a) * dist;
+          f.userData.baseY = 8 + Math.random() * 7;  // 重新放到天空区域
+        }
+      });
+
+      // ---- 相机平滑跟随（锁定小人） ----
+      // 视野中心 = 小人位置；y 固定为站立高度，避免跳跃时相机跟着上下晃
+      const focusTarget = new THREE.Vector3(
+        player.position.x,
+        CONFIG.boxHeight + PLAYER_FOOT_OFFSET,
+        player.position.z
+      );
+
+      // 相机目标位置 = 小人 + 固定偏移，lerp 平滑移动
+      const targetCamPos = focusTarget.clone().add(CONFIG.cameraOffset);
+      camera.position.lerp(targetCamPos, CONFIG.cameraLerp);
+
+      // lookAt 也平滑过渡，避免视角突变
+      _lookAtCurrent.lerp(focusTarget, CONFIG.cameraLerp);
+      camera.lookAt(_lookAtCurrent);
+
+      // ---- 方向光跟随小人，保证阴影不脱节 ----
+      dirLight.position.set(player.position.x + 5, 12, player.position.z + 3);
+      dirLight.target.position.set(player.position.x, 0, player.position.z);
+      dirLight.target.updateMatrixWorld();
+
+      // ---- 渲染 ----
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ============ 窗口自适应 ============
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+  })();
+  </script>
+</body>
+</html>

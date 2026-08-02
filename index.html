@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>影上新 · 全平台影视上新资讯时间线</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #FAFAFA;
+    --primary: #2F86FF;
+    --accent: #FF7D29;
+    --text-dark: #1F2329;
+    --text-mid: #6B7280;
+    --text-light: #9CA3AF;
+    --line: #E5E7EB;
+    --card-shadow: 0 4px 16px rgba(31,35,41,0.06);
+    --card-shadow-hover: 0 10px 28px rgba(31,35,41,0.12);
+  }
+  body {
+    background: var(--bg);
+    color: var(--text-dark);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+  }
+
+  /* ===== 顶部导航栏 ===== */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(250,250,250,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 16px 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .logo {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--primary);
+    letter-spacing: 1px;
+  }
+  .slogan {
+    font-size: 13px;
+    color: var(--text-mid);
+  }
+
+  /* ===== 筛选区 ===== */
+  .filter-bar {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 20px 24px 8px;
+  }
+  .filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .filter-label {
+    font-size: 13px;
+    color: var(--text-light);
+    margin-right: 4px;
+    flex-shrink: 0;
+  }
+  .chip {
+    padding: 6px 16px;
+    font-size: 13px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--text-mid);
+    cursor: pointer;
+    transition: all 0.18s;
+    font-family: inherit;
+  }
+  .chip:hover { border-color: var(--primary); color: var(--primary); }
+  .chip.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+
+  /* ===== 时间线 ===== */
+  .timeline-wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 24px 24px 80px;
+    position: relative;
+  }
+  /* 贯穿主线 */
+  .timeline-wrap::before {
+    content: '';
+    position: absolute;
+    left: 60px;
+    top: 24px;
+    bottom: 80px;
+    width: 2px;
+    background: var(--line);
+  }
+  .tl-item {
+    position: relative;
+    padding-left: 96px;
+    margin-bottom: 28px;
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  .tl-item.visible { opacity: 1; transform: translateY(0); }
+  /* 时间节点 */
+  .tl-node {
+    position: absolute;
+    left: 53px;
+    top: 24px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 3px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--primary);
+    z-index: 2;
+  }
+  .tl-node.pending {
+    background: #fff;
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  /* 日期标签 */
+  .tl-date {
+    position: absolute;
+    left: 0;
+    top: 18px;
+    width: 44px;
+    text-align: right;
+    font-size: 12px;
+    color: var(--text-light);
+    line-height: 1.4;
+  }
+  .tl-date .day { font-size: 16px; font-weight: 700; color: var(--text-dark); }
+  .tl-date .month { font-size: 11px; color: var(--text-light); }
+
+  /* ===== 资讯卡片 ===== */
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px 22px;
+    box-shadow: var(--card-shadow);
+    transition: box-shadow 0.25s, transform 0.25s;
+  }
+  .card:hover {
+    box-shadow: var(--card-shadow-hover);
+    transform: translateY(-3px);
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  /* 类型标签：浅底彩字 */
+  .tag {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 6px;
+  }
+  .tag-movie { background: #FFF0E6; color: #FF7D29; }      /* 院线电影-暖橙 */
+  .tag-drama { background: #E6F2FF; color: #2F86FF; }      /* 电视剧-晴空蓝 */
+  .tag-show  { background: #FFE6F0; color: #EC4899; }      /* 综艺-玫粉 */
+  .tag-anime { background: #E6F7ED; color: #22C55E; }      /* 动漫-草绿 */
+  .tag-doc   { background: #F3EEFF; color: #8B5CF6; }      /* 纪录片-紫 */
+  /* 事件属性 */
+  .event-badge {
+    font-size: 11px;
+    color: var(--text-light);
+    border: 1px solid var(--line);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .event-badge.online { color: var(--primary); border-color: var(--primary); }
+  .event-badge.advance { color: var(--accent); border-color: var(--accent); }
+  .card-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-dark);
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+  .card-summary {
+    font-size: 14px;
+    color: var(--text-mid);
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+  .card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .source {
+    font-size: 12px;
+    color: var(--text-light);
+  }
+  .source a {
+    color: var(--text-light);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--line);
+    transition: color 0.15s;
+  }
+  .source a:hover { color: var(--primary); }
+  .detail-btn {
+    font-size: 13px;
+    color: var(--primary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 4px 8px;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+  .detail-btn:hover { opacity: 0.7; }
+  /* 详情展开区 */
+  .detail {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease, margin 0.4s ease, padding 0.4s ease;
+    border-top: 1px solid transparent;
+  }
+  .detail.open {
+    max-height: 600px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .detail h4 {
+    font-size: 13px;
+    color: var(--text-dark);
+    margin-bottom: 8px;
+  }
+  .detail p {
+    font-size: 13px;
+    color: var(--text-mid);
+    line-height: 1.8;
+    margin-bottom: 10px;
+  }
+  .detail .meta-line {
+    font-size: 12px;
+    color: var(--text-light);
+  }
+  .detail .meta-line strong { color: var(--text-mid); font-weight: 600; }
+
+  .empty-tip {
+    text-align: center;
+    color: var(--text-light);
+    padding: 60px 0;
+    font-size: 14px;
+  }
+
+  /* ===== 底部说明 ===== */
+  .footer {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 24px 48px;
+    border-top: 1px solid var(--line);
+    text-align: center;
+  }
+  .footer .demo-tag {
+    display: inline-block;
+    font-size: 12px;
+    color: var(--accent);
+    background: #FFF0E6;
+    padding: 3px 12px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .footer p {
+    font-size: 12px;
+    color: var(--text-light);
+    line-height: 1.8;
+  }
+
+  /* ===== 回到顶部 ===== */
+  .back-top {
+    position: fixed;
+    right: 32px;
+    bottom: 32px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(47,134,255,0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 90;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .back-top.show { opacity: 1; pointer-events: auto; }
+  .back-top:hover { transform: translateY(-3px); }
+</style>
+</head>
+<body>
+
+  <!-- 顶部导航栏 -->
+  <header class="nav">
+    <div class="nav-inner">
+      <span class="logo">影上新</span>
+      <span class="slogan">全平台影视上新资讯，一条时间线看全</span>
+    </div>
+  </header>
+
+  <!-- 筛选区 -->
+  <section class="filter-bar">
+    <div class="filter-row">
+      <span class="filter-label">类型</span>
+      <button class="chip active" data-type="all">全部</button>
+      <button class="chip" data-type="movie">院线电影</button>
+      <button class="chip" data-type="drama">电视剧</button>
+      <button class="chip" data-type="show">综艺</button>
+      <button class="chip" data-type="anime">动漫</button>
+      <button class="chip" data-type="doc">纪录片</button>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">时间</span>
+      <button class="chip active" data-range="all">全部</button>
+      <button class="chip" data-range="week">本周</button>
+      <button class="chip" data-range="month">本月</button>
+      <button class="chip" data-range="upcoming">即将上线</button>
+    </div>
+  </section>
+
+  <!-- 时间线主体 -->
+  <main class="timeline-wrap" id="timeline"></main>
+
+  <!-- 底部说明 -->
+  <footer class="footer">
+    <span class="demo-tag">模拟演示版本</span>
+    <p>本页面所有影视资讯均为模拟数据，仅用于产品原型演示，不代表真实上线信息。</p>
+    <p>资讯来源、定档时间等内容均为虚构，请勿作为实际观影决策依据。</p>
+  </footer>
+
+  <!-- 回到顶部 -->
+  <button class="back-top" id="backTop" aria-label="回到顶部">↑</button>
+
+<script>
+  // ============ 假数据 ============
+  // type: movie院线电影 / drama网络剧 / show综艺 / anime动漫
+  // event: online上线 / schedule定档 / advance提档
+  // status: released已上线 / pending待上线
+  const NEWS = [
+    {
+      date: '2026-07-23', type: 'drama', event: 'online', status: 'released',
+      title: '《长安霓裳录》全网首播',
+      summary: '古装悬疑剧《长安霓裳录》今日起在腾讯视频全网首播，由林深、苏晚主演，讲述盛唐长安城中一桩牵动朝野的霓裳羽衣案。',
+      source: '腾讯视频官微',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '该剧以盛唐为背景，融合悬疑推理与宫廷权谋。舞坊首席舞姬离奇身亡，刑部侍郎林晏奉命追查，却发现案件背后牵连一桩十年前的旧案与一卷失传的霓裳羽衣曲谱。',
+        cast: '林深 饰 林晏 / 苏晚 饰 沈月容 / 陈宥 饰 裴长青',
+        platform: '腾讯视频 独播 / 每周三、四、五 20:00 更新两集',
+        ep: '全 36 集'
+      }
+    },
+    {
+      date: '2026-07-22', type: 'movie', event: 'online', status: 'released',
+      title: '《深海回响》全国院线上映',
+      summary: '科幻惊悚电影《深海回响》今日正式登陆全国院线，由陆川执导、张震领衔主演，讲述深海科考队遭遇未知生物的惊险故事。',
+      source: '电影官微',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '一支深海科考队在马里亚纳海沟执行任务时，捕捉到一段无法解释的低频声波。随着下潜深度增加，队员接连出现幻觉，他们逐渐意识到，深渊之中并非只有黑暗。',
+        cast: '张震 饰 队长周远 / 咏梅 饰 生物学家方汀 / 王传君 饰 工程师老郑',
+        platform: '全国院线 / IMAX 同步上映',
+        ep: '片长 128 分钟'
+      }
+    },
+    {
+      date: '2026-07-20', type: 'show', event: 'online', status: 'released',
+      title: '《声浪2026》第三季回归开播',
+      summary: '音乐竞演综艺《声浪》第三季于本周日晚在湖南卫视与芒果TV同步开播，本季以"原创力量"为主题，集结 24 位原创音乐人同台竞技。',
+      source: '芒果TV官博',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '《声浪》第三季回归原创音乐本源，取消往季翻唱赛制，全程聚焦原创作品创作与演绎。节目邀请三位资深音乐人担任"声浪导师"，陪伴选手完成 12 期主题创作挑战。',
+        cast: '导师：李健 / 谭维维 / 彭飞；主持：何炅',
+        platform: '湖南卫视 + 芒果TV 每周日 22:00 同步直播',
+        ep: '共 12 期'
+      }
+    },
+    {
+      date: '2026-07-18', type: 'anime', event: 'online', status: 'released',
+      title: '《雾山行》国产动画第二季上线',
+      summary: '国风热血动画《雾山行》第二季今日在哔哩哔哩全网独播，延续第一季东方志怪世界观，全新"白骨岭"篇章正式开启。',
+      source: '哔哩哔哩动画',
+      sourceLink: 'https://www.bilibili.com/',
+      detail: {
+        intro: '少年行者衔枝踏入雾山深处，在与各路精怪的交锋中逐渐揭开雾山封印的真相。第二季开启"白骨岭"新篇章，新角色白骨夫人登场，画风延续水墨与重彩结合的东方美学。',
+        cast: '配音：阿杰 饰 衔枝 / 乔诗语 饰 白骨夫人 / 图特哈蒙 饰 老龟',
+        platform: '哔哩哔哩 独播 / 每周六 12:00 更新一集',
+        ep: '全 14 集'
+      }
+    },
+    {
+      date: '2026-07-16', type: 'movie', event: 'schedule', status: 'pending',
+      title: '《逆光行者》定档 8 月 8 日全国公映',
+      summary: '现实题材电影《逆光行者》正式定档 8 月 8 日全国公映，影片由文牧野执导、易烊千玺主演，聚焦外卖骑手群体的都市生存故事。',
+      source: '影片官方微博',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '影片改编自真实故事，讲述一名外卖骑手在都市洪流中奔波求生，却因一次意外卷入一场关于算法与人情的抉择。导演以纪实风格呈现平台经济下普通人的尊严与挣扎。',
+        cast: '易烊千玺 饰 骑手陈默 / 殷桃 饰 站长周姐 / 章宇 饰 工友老六',
+        platform: '全国院线 / 8 月 8 日公映',
+        ep: '片长 116 分钟'
+      }
+    },
+    {
+      date: '2026-07-15', type: 'drama', event: 'online', status: 'released',
+      title: '《无声告白》爱奇艺迷雾剧场开播',
+      summary: '悬疑家庭剧《无声告白》登陆爱奇艺迷雾剧场，由谭卓、秦昊主演，改编自同名小说，讲述一个看似完美的家庭背后隐藏的沉默秘密。',
+      source: '爱奇艺官微',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '女儿莉迪亚的意外离世，撕开了一个华人家庭表面平静下的裂痕。母亲始终无法接受现实，父亲在愧疚中沉默，而那个被忽视的儿子，手中握着揭开真相的钥匙。',
+        cast: '谭卓 饰 母亲玛丽琳 / 秦昊 饰 父亲詹姆斯 / 张子枫 饰 莉迪亚',
+        platform: '爱奇艺 迷雾剧场 / 每周一、二 20:00 各更新两集',
+        ep: '全 24 集'
+      }
+    },
+    {
+      date: '2026-07-12', type: 'show', event: 'schedule', status: 'pending',
+      title: '《慢游中国》第二季定档 8 月 2 日开播',
+      summary: '慢综艺《慢游中国》第二季官宣定档 8 月 2 日起每周五在优酷上线，本季以"古城"为线索，探访八座被时间遗忘的千年小城。',
+      source: '优酷人文官博',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '没有任务、没有竞技，只有几位老友结伴走进古城的街巷，与当地手艺人、老居民慢节奏相处。第二季新增"古城手艺"单元，记录濒临消失的传统技艺。',
+        cast: '常驻：黄渤 / 周冬雨 / 张亚东',
+        platform: '优酷 人文频道 / 8 月 2 日起每周五 12:00',
+        ep: '共 10 期'
+      }
+    },
+    {
+      date: '2026-07-10', type: 'anime', event: 'advance', status: 'pending',
+      title: '《星海战记》提档至 7 月 28 日首播',
+      summary: '原定 8 月播出的科幻动画《星海战记》宣布提档至 7 月 28 日在哔哩哔哩首播，官方同时发布定档预告与主视觉海报。',
+      source: '哔哩哔哩动画',
+      sourceLink: 'https://www.bilibili.com/',
+      detail: {
+        intro: '22 世纪，人类为寻找新家园踏上星际远征。少年舰长驾驶星舰穿越虫洞，却在未知星域遭遇一支自称"守望者"的古老文明，宇宙的真相由此改写。',
+        cast: '配音：山新 饰 舰长星河 / 藤新 饰 AI领航员 / 宝木中阳 饰 守望者使者',
+        platform: '哔哩哔哩 独播 / 7 月 28 日起每周二 20:00',
+        ep: '全 26 集'
+      }
+    },
+    {
+      date: '2026-07-08', type: 'movie', event: 'online', status: 'released',
+      title: '《夏日晚风》点映开启',
+      summary: '青春爱情电影《夏日晚风》今日开启全国点映，影片由新人导演林夏执导，讲述两个少年在毕业之夏关于告别与重逢的故事，点映口碑不俗。',
+      source: '电影官微',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '高考结束的那个夏天，林一和苏夏在小镇的旧书店重逢。他们约定在分别前完成一份"夏天清单"，却没料到，最后一件待办事项，是一场迟到了三年的告白。',
+        cast: '新人演员：陈禾 饰 林一 / 何蓝 饰 苏夏',
+        platform: '全国院线点映 / 7 月 8 日-14 日限时点映，8 月 1 日正式公映',
+        ep: '片长 102 分钟'
+      }
+    },
+    {
+      date: '2026-07-05', type: 'drama', event: 'schedule', status: 'pending',
+      title: '《破晓行动》定档 8 月 15 日优酷独播',
+      summary: '刑侦涉案剧《破晓行动》官宣定档 8 月 15 日优酷独播，由张译、黄景瑜主演，讲述边境缉毒警察深入虎穴的卧底行动。',
+      source: '优酷剧集官博',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '根据真实案件改编。一名缉毒警察以假身份潜入边境毒枭集团，在刀尖上行走的三年里，他必须在身份暴露前找到贩毒网络的核心证据，却不知组织内部早已埋下内鬼。',
+        cast: '张译 饰 卧底陈越 / 黄景瑜 饰 队长陆征 / 颜丙燕 饰 局长',
+        platform: '优酷 独播 / 8 月 15 日起每日 20:00 更新',
+        ep: '全 30 集'
+      }
+    },
+    {
+      date: '2026-07-02', type: 'show', event: 'online', status: 'released',
+      title: '《脑力竞技场》新一季开播',
+      summary: '科学竞技综艺《脑力竞技场》新一季于本周五在江苏卫视与爱奇艺同步开播，本季引入 AI 对战环节，选手将与人工智能同台比拼。',
+      source: '爱奇艺综艺官博',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '最强大脑的舞台迎来新对手——AI。本季新增"人机对决"环节，选手需要在记忆、推理、空间想象等领域直面人工智能的挑战，探讨人类思维与算法的边界。',
+        cast: '主持：蒋昌建；科学评审：魏坤琳、施一公',
+        platform: '江苏卫视 + 爱奇艺 / 每周五 21:10',
+        ep: '共 10 期'
+      }
+    },
+    {
+      date: '2026-06-28', type: 'anime', event: 'online', status: 'released',
+      title: '《猫町奇谭》全集上线',
+      summary: '治愈系动画《猫町奇谭》全集在哔哩哔哩上线，以一座住满猫咪的奇幻小镇为舞台，每集讲述一只猫咪与人类之间的温暖奇遇。',
+      source: '哔哩哔哩动画',
+      sourceLink: 'https://www.bilibili.com/',
+      detail: {
+        intro: '在无人知晓的猫町，每只猫咪都守护着一个人类的心愿。当旅人误入小镇，一场关于告别、等待与重逢的奇遇就此展开。全片水彩画风，治愈舒缓。',
+        cast: '配音：姜广涛 饰 旅人 / 山新 饰 橘猫阿吉 / 杨天翔 饰 黑猫夜',
+        platform: '哔哩哔哩 独播 / 全 12 集一次性上线',
+        ep: '全 12 集'
+      }
+    },
+    {
+      date: '2026-07-19', type: 'doc', event: 'online', status: 'released',
+      title: '《山河笔记》自然纪录片上线',
+      summary: '人文自然纪录片《山河笔记》今日在 CCTV-9 纪录频道与央视频同步上线，以四季更迭为线索，记录中国八处秘境的生态与人文。',
+      source: 'CCTV纪录官微',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '摄制组历时两年深入八处人迹罕至的自然秘境，从怒江峡谷的溜索到阿尔金山的荒原，以四季为脉络，记录山川地貌、珍稀生灵与世代栖居于此的人们之间沉默而坚韧的联结。',
+        cast: '解说：李立宏；摄影指导：王源宗',
+        platform: 'CCTV-9 纪录频道 + 央视频 / 每周一至周五 20:00',
+        ep: '全 8 集'
+      }
+    },
+    {
+      date: '2026-07-06', type: 'doc', event: 'schedule', status: 'pending',
+      title: '《丝路遗珍》定档 8 月 10 日开播',
+      summary: '考古纪录片《丝路遗珍》官宣定档 8 月 10 日起在腾讯视频与 B 站联合播出，跟随考古队重走丝绸之路，揭开六处重要遗址的尘封往事。',
+      source: '腾讯视频纪录片官博',
+      sourceLink: 'https://weibo.com/',
+      detail: {
+        intro: '从敦煌到撒马尔罕，摄制组获准深入六处丝绸之路关键考古现场，以 4K 影像与三维复原技术，再现这条古老商道上文明交汇的辉煌瞬间与那些被黄沙掩埋的日常。',
+        cast: '解说：周涛；学术顾问：北京大学考古文博学院',
+        platform: '腾讯视频 + 哔哩哔哩 / 8 月 10 日起每周一 20:00',
+        ep: '全 6 集'
+      }
+    }
+  ];
+
+  // ============ 类型/事件映射 ============
+  const TYPE_MAP = {
+    movie: { name: '院线电影', tag: 'tag-movie' },
+    drama: { name: '电视剧',   tag: 'tag-drama' },
+    show:  { name: '综艺',    tag: 'tag-show' },
+    anime: { name: '动漫',    tag: 'tag-anime' },
+    doc:   { name: '纪录片',  tag: 'tag-doc' }
+  };
+  const EVENT_MAP = {
+    online:   { name: '上线', cls: 'online' },
+    schedule: { name: '定档', cls: '' },
+    advance:  { name: '提档', cls: 'advance' }
+  };
+
+  // ============ 渲染 ============
+  const timelineEl = document.getElementById('timeline');
+  let currentType = 'all';
+  let currentRange = 'all';
+
+  // 今天基准（用于本周/本月/即将上线判定）
+  const TODAY = new Date('2026-07-23');
+
+  function inRange(dateStr, range) {
+    const d = new Date(dateStr);
+    const diffDays = Math.round((d - TODAY) / 86400000);
+    if (range === 'week')   return diffDays >= -7 && diffDays <= 0;   // 本周：过去7天内
+    if (range === 'month')  return diffDays >= -30 && diffDays <= 0;  // 本月：过去30天内
+    if (range === 'upcoming') return diffDays > 0;                    // 即将上线：未来
+    return true;  // 全部
+  }
+
+  function formatDate(dateStr) {
+    const d = new Date(dateStr);
+    const month = (d.getMonth() + 1) + '月';
+    const day = d.getDate();
+    return { month, day: String(day).padStart(2, '0') };
+  }
+
+  function render() {
+    const filtered = NEWS.filter(n => {
+      const typeOk = currentType === 'all' || n.type === currentType;
+      const rangeOk = inRange(n.date, currentRange);
+      return typeOk && rangeOk;
+    });
+
+    if (filtered.length === 0) {
+      timelineEl.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
+      return;
+    }
+
+    // 按日期倒序
+    filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    timelineEl.innerHTML = filtered.map((n, idx) => {
+      const t = TYPE_MAP[n.type];
+      const e = EVENT_MAP[n.event];
+      const dt = formatDate(n.date);
+      const nodeCls = n.status === 'pending' ? 'tl-node pending' : 'tl-node';
+      const evText = n.event === 'online' ? '上线' : (n.event === 'advance' ? '提档' : '定档');
+      const fullDate = n.date.replace(/-/g, '/') + ' ' + evText;
+      return `
+        <div class="tl-item" data-idx="${idx}">
+          <div class="tl-date">
+            <div class="day">${dt.day}</div>
+            <div class="month">${dt.month}</div>
+          </div>
+          <div class="${nodeCls}"></div>
+          <div class="card">
+            <div class="card-head">
+              <span class="tag ${t.tag}">${t.name}</span>
+              <span class="event-badge ${e.cls}">${e.name}</span>
+            </div>
+            <h3 class="card-title">${n.title}</h3>
+            <p class="card-summary">${n.summary}</p>
+            <div class="card-foot">
+              <span class="source">来源：<a href="${n.sourceLink}" target="_blank" rel="noopener">${n.source}</a></span>
+              <button class="detail-btn" onclick="toggleDetail(this)">查看详情 ▾</button>
+            </div>
+            <div class="detail">
+              <p>${n.detail.intro}</p>
+              <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
+              <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
+              <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
+              <div class="meta-line" style="margin-top:10px;"><strong>时间：</strong>${fullDate}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // 触发滚动淡入观察
+    observeItems();
+  }
+
+  // ============ 详情展开/收起 ============
+  window.toggleDetail = function(btn) {
+    const detail = btn.parentElement.nextElementSibling;
+    const isOpen = detail.classList.toggle('open');
+    btn.textContent = isOpen ? '收起 ▴' : '查看详情 ▾';
+  };
+
+  // ============ 筛选交互 ============
+  document.querySelectorAll('.chip[data-type]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip[data-type]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      currentType = chip.dataset.type;
+      render();
+    });
+  });
+  document.querySelectorAll('.chip[data-range]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip[data-range]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      currentRange = chip.dataset.range;
+      render();
+    });
+  });
+
+  // ============ 滚动淡入 ============
+  let observer;
+  function observeItems() {
+    if (observer) observer.disconnect();
+    observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.tl-item').forEach(item => observer.observe(item));
+  }
+
+  // ============ 回到顶部 ============
+  const backTop = document.getElementById('backTop');
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 400) backTop.classList.add('show');
+    else backTop.classList.remove('show');
+  });
+  backTop.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // ============ 初始渲染 ============
+  render();
+</script>
+</body>
+</html>
