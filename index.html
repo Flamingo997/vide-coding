@@ -29,6 +29,7 @@
     color: var(--text-1);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     line-height: 1.6;
+    transition: background 0.4s ease;
   }
 
   /* ===== 整体布局：左固定侧边栏 + 右滚动内容区 ===== */
@@ -277,7 +278,7 @@
     transition: opacity 0.5s ease, transform 0.5s ease;
   }
   .tl-item.visible { opacity: 1; transform: translateY(0); }
-  /* 时间节点：品类色实心圆点；待上线为空心 */
+  /* 时间节点：品类色实心圆点；待上线为空心；两种状态外圈尺寸一致 */
   .tl-node {
     position: absolute;
     left: 0;
@@ -285,13 +286,11 @@
     width: 12px; height: 12px;
     border-radius: 50%;
     background: var(--tc, var(--primary));
-    border: 2px solid var(--bg);
-    box-shadow: 0 0 0 2px var(--tc, var(--primary));
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--tc, var(--primary));
     z-index: 2;
   }
   .tl-node.pending {
     background: #fff;
-    box-shadow: 0 0 0 2px var(--tc, var(--primary));
   }
 
   /* ===== 资讯卡片：白卡轻影 + 左侧品类色边 + 2:3 竖版海报 ===== */
@@ -762,6 +761,16 @@
   };
   const EVENT_NAME = { online: '上线', schedule: '定档', advance: '提档' };
 
+  // 各分类对应的页面背景色（品类主题色的浅色调）
+  const TYPE_BG = {
+    all:   '#F5F7FA',
+    movie: '#FFF4EC',   // 暖橙浅底
+    drama: '#EEF5FF',   // 晴空蓝浅底
+    show:  '#FDEEF5',   // 玫粉浅底
+    anime: '#EBF9F0',   // 草绿浅底
+    doc:   '#F3EFFF'    // 浅紫浅底
+  };
+
   // 模拟发布时分（按数据顺序）
   const TIMES = ['09:30','10:00','11:20','14:00','15:30','16:40','18:00','19:20','20:00','21:00','08:40','13:10','10:40','17:20'];
   const WEEKDAYS = ['周日','周一','周二','周三','周四','周五','周六'];
@@ -906,12 +915,13 @@
   bannerEl.addEventListener('mouseleave', startAuto);
   startAuto();
 
-  // ============ 侧边栏分类筛选 ============
+  // ============ 侧边栏分类筛选（切换时页面背景变为品类主题浅色调） ============
   document.querySelectorAll('.side-item').forEach(item => {
     item.addEventListener('click', () => {
       document.querySelectorAll('.side-item').forEach(c => c.classList.remove('active'));
       item.classList.add('active');
       currentType = item.dataset.type;
+      document.body.style.background = TYPE_BG[currentType] || TYPE_BG.all;
       render();
     });
   });
