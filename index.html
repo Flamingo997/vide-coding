@@ -14,6 +14,12 @@
     --text-mid: #6B7280;
     --text-light: #9CA3AF;
     --line: #E5E7EB;
+    /* 五级灰度体系 */
+    --gray-1: #F5F6F7;
+    --gray-2: #E5E7EB;
+    --gray-3: #9CA3AF;
+    --gray-4: #6B7280;
+    --gray-5: #1F2329;
     --card-shadow: 0 4px 16px rgba(31,35,41,0.06);
     --card-shadow-hover: 0 10px 28px rgba(31,35,41,0.12);
   }
@@ -51,6 +57,35 @@
     font-size: 13px;
     color: var(--text-mid);
   }
+  /* 极简搜索框 */
+  .search-box { margin-left: auto; position: relative; align-self: center; }
+  .search-box input {
+    width: 210px;
+    padding: 7px 14px 7px 32px;
+    font-size: 13px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    outline: none;
+    font-family: inherit;
+    color: var(--text-dark);
+    transition: border-color 0.18s, box-shadow 0.18s;
+  }
+  .search-box input::placeholder { color: var(--gray-3); }
+  .search-box input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(47,134,255,0.12);
+  }
+  .search-box::before {
+    content: '🔍';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    opacity: 0.45;
+    pointer-events: none;
+  }
 
   /* ===== 筛选区 ===== */
   .filter-bar {
@@ -71,22 +106,23 @@
     margin-right: 4px;
     flex-shrink: 0;
   }
+  /* 胶囊按钮：未选中浅灰底，选中主色填充 */
   .chip {
-    padding: 6px 16px;
+    padding: 7px 18px;
     font-size: 13px;
     border-radius: 999px;
-    border: 1px solid var(--line);
-    background: #fff;
-    color: var(--text-mid);
+    border: none;
+    background: var(--gray-1);
+    color: var(--gray-4);
     cursor: pointer;
     transition: all 0.18s;
     font-family: inherit;
   }
-  .chip:hover { border-color: var(--primary); color: var(--primary); }
+  .chip:hover { background: var(--gray-2); color: var(--primary); }
   .chip.active {
     background: var(--primary);
-    border-color: var(--primary);
     color: #fff;
+    box-shadow: 0 4px 12px rgba(47,134,255,0.28);
   }
 
   /* ===== 时间线 ===== */
@@ -96,15 +132,15 @@
     padding: 24px 24px 80px;
     position: relative;
   }
-  /* 贯穿主线 */
+  /* 贯穿主线：浅灰细虚线 */
   .timeline-wrap::before {
     content: '';
     position: absolute;
     left: 60px;
     top: 24px;
     bottom: 80px;
-    width: 2px;
-    background: var(--line);
+    width: 0;
+    border-left: 2px dashed var(--line);
   }
   .tl-item {
     position: relative;
@@ -146,11 +182,13 @@
   .tl-date .day { font-size: 16px; font-weight: 700; color: var(--text-dark); }
   .tl-date .month { font-size: 11px; color: var(--text-light); }
 
-  /* ===== 资讯卡片 ===== */
+  /* ===== 资讯卡片（封面卡片化） ===== */
   .card {
+    display: flex;
+    gap: 18px;
     background: #fff;
     border-radius: 12px;
-    padding: 20px 22px;
+    padding: 18px;
     box-shadow: var(--card-shadow);
     transition: box-shadow 0.25s, transform 0.25s;
   }
@@ -158,6 +196,25 @@
     box-shadow: var(--card-shadow-hover);
     transform: translateY(-3px);
   }
+  /* 2:3 竖版海报封面 */
+  .poster {
+    width: 108px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    aspect-ratio: 2 / 3;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--gray-1);
+  }
+  .poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.4s ease;
+  }
+  .card:hover .poster img { transform: scale(1.06); }
+  .card-body { flex: 1; min-width: 0; }
   .card-head {
     display: flex;
     align-items: center;
@@ -165,12 +222,12 @@
     margin-bottom: 10px;
     flex-wrap: wrap;
   }
-  /* 类型标签：浅底彩字 */
+  /* 类型标签：胶囊式浅底彩字 */
   .tag {
     font-size: 12px;
     font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 6px;
+    padding: 3px 12px;
+    border-radius: 999px;
   }
   .tag-movie { background: #FFF0E6; color: #FF7D29; }      /* 院线电影-暖橙 */
   .tag-drama { background: #E6F2FF; color: #2F86FF; }      /* 电视剧-晴空蓝 */
@@ -187,26 +244,37 @@
   }
   .event-badge.online { color: var(--primary); border-color: var(--primary); }
   .event-badge.advance { color: var(--accent); border-color: var(--accent); }
+  /* 第一层级：标题，最多 2 行截断 */
   .card-title {
     font-size: 17px;
     font-weight: 700;
     color: var(--text-dark);
     line-height: 1.5;
     margin-bottom: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
+  /* 第三层级：摘要 2 行截断 */
   .card-summary {
     font-size: 14px;
     color: var(--text-mid);
     line-height: 1.7;
     margin-bottom: 14px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .card-foot {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 12px;
   }
   .source {
+    flex: 1;
+    min-width: 0;
     font-size: 12px;
     color: var(--text-light);
   }
@@ -217,6 +285,12 @@
     transition: color 0.15s;
   }
   .source a:hover { color: var(--primary); }
+  /* 第三层级：时间，浅灰弱化 */
+  .card-date {
+    font-size: 12px;
+    color: var(--text-light);
+    flex-shrink: 0;
+  }
   .detail-btn {
     font-size: 13px;
     color: var(--primary);
@@ -288,6 +362,11 @@
     color: var(--text-light);
     line-height: 1.8;
   }
+  .footer .version {
+    margin-top: 10px;
+    font-weight: 600;
+    color: var(--gray-4);
+  }
 
   /* ===== 回到顶部 ===== */
   .back-top {
@@ -322,6 +401,9 @@
     <div class="nav-inner">
       <span class="logo">影上新</span>
       <span class="slogan">全平台影视上新资讯，一条时间线看全</span>
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="搜索作品 / 关键词">
+      </div>
     </div>
   </header>
 
@@ -353,6 +435,7 @@
     <span class="demo-tag">模拟演示版本</span>
     <p>本页面所有影视资讯均为模拟数据，仅用于产品原型演示，不代表真实上线信息。</p>
     <p>资讯来源、定档时间等内容均为虚构，请勿作为实际观影决策依据。</p>
+    <p class="version">Version 0.2</p>
   </footer>
 
   <!-- 回到顶部 -->
@@ -562,10 +645,30 @@
     advance:  { name: '提档', cls: 'advance' }
   };
 
+  // ============ 海报封面（按标题映射） ============
+  const POSTER_BASE = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?image_size=portrait_4_3&prompt=';
+  const POSTER_MAP = {
+    '《长安霓裳录》全网首播': 'Ancient Chinese Tang dynasty drama poster, elegant court dancer in flowing silk robes, crimson and gold palace interior, cinematic lighting, vertical movie poster composition, no text',
+    '《深海回响》全国院线上映': 'Deep sea sci-fi thriller movie poster, research submarine descending into dark abyss, eerie blue bioluminescence, cinematic, vertical composition, no text',
+    '《声浪2026》第三季回归开播': 'Music competition stage poster, singer silhouette under dramatic spotlights, vibrant purple and blue haze, vertical composition, no text',
+    '《雾山行》国产动画第二季上线': 'Chinese fantasy animation poster, young warrior in misty mountains, ink wash painting style with bold red accents, vertical composition, no text',
+    '《逆光行者》定档 8 月 8 日全国公映': 'Realistic drama film poster, food delivery rider on electric scooter in rainy neon city street at night, cinematic mood, vertical composition, no text',
+    '《无声告白》爱奇艺迷雾剧场开播': 'Suspense family drama poster, dim suburban house window glowing at dusk, family silhouettes, muted cold tones, vertical composition, no text',
+    '《慢游中国》第二季定档 8 月 2 日开播': 'Slow travel show poster, quiet ancient Chinese town stone alley in warm morning light, cozy nostalgic atmosphere, vertical composition, no text',
+    '《星海战记》提档至 7 月 28 日首播': 'Epic sci-fi space animation poster, starship crossing a colorful nebula, vast starfield, sense of scale, vertical composition, no text',
+    '《夏日晚风》点映开启': 'Youth romance film poster, two teenagers by the sea at golden sunset, warm summer light, soft film grain, vertical composition, no text',
+    '《破晓行动》定档 8 月 15 日优酷独播': 'Crime action drama poster, lone agent silhouette at misty border checkpoint at dawn, teal and orange cinematic tone, vertical composition, no text',
+    '《脑力竞技场》新一季开播': 'Science competition show poster, glowing human brain hologram facing an AI robot head, futuristic blue technology style, vertical composition, no text',
+    '《猫町奇谭》全集上线': 'Healing watercolor animation poster, whimsical hillside town full of cats at warm sunset, soft pastel colors, vertical composition, no text',
+    '《山河笔记》自然纪录片上线': 'Nature documentary poster, majestic Chinese canyon landscape with river and morning mist, golden hour, vertical composition, no text',
+    '《丝路遗珍》定档 8 月 10 日开播': 'Archaeology documentary poster, Silk Road desert ruins with unearthed ancient artifacts and pottery, warm sand tones, vertical composition, no text'
+  };
+
   // ============ 渲染 ============
   const timelineEl = document.getElementById('timeline');
   let currentType = 'all';
   let currentRange = 'all';
+  let keyword = '';
 
   // 今天基准（用于本周/本月/即将上线判定）
   const TODAY = new Date('2026-07-23');
@@ -590,7 +693,8 @@
     const filtered = NEWS.filter(n => {
       const typeOk = currentType === 'all' || n.type === currentType;
       const rangeOk = inRange(n.date, currentRange);
-      return typeOk && rangeOk;
+      const kwOk = !keyword || n.title.includes(keyword) || n.summary.includes(keyword);
+      return typeOk && rangeOk && kwOk;
     });
 
     if (filtered.length === 0) {
@@ -601,37 +705,45 @@
     // 按日期倒序
     filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
 
+    // 同日资讯合并时间节点：仅每组首条显示日期与节点
+    let prevDate = null;
     timelineEl.innerHTML = filtered.map((n, idx) => {
       const t = TYPE_MAP[n.type];
       const e = EVENT_MAP[n.event];
       const dt = formatDate(n.date);
+      const sameDay = n.date === prevDate;
+      prevDate = n.date;
       const nodeCls = n.status === 'pending' ? 'tl-node pending' : 'tl-node';
       const evText = n.event === 'online' ? '上线' : (n.event === 'advance' ? '提档' : '定档');
       const fullDate = n.date.replace(/-/g, '/') + ' ' + evText;
+      const poster = POSTER_BASE + encodeURIComponent(POSTER_MAP[n.title]);
       return `
         <div class="tl-item" data-idx="${idx}">
-          <div class="tl-date">
+          ${sameDay ? '' : `<div class="tl-date">
             <div class="day">${dt.day}</div>
             <div class="month">${dt.month}</div>
           </div>
-          <div class="${nodeCls}"></div>
+          <div class="${nodeCls}"></div>`}
           <div class="card">
-            <div class="card-head">
-              <span class="tag ${t.tag}">${t.name}</span>
-              <span class="event-badge ${e.cls}">${e.name}</span>
-            </div>
-            <h3 class="card-title">${n.title}</h3>
-            <p class="card-summary">${n.summary}</p>
-            <div class="card-foot">
-              <span class="source">来源：<a href="${n.sourceLink}" target="_blank" rel="noopener">${n.source}</a></span>
-              <button class="detail-btn" onclick="toggleDetail(this)">查看详情 ▾</button>
-            </div>
-            <div class="detail">
-              <p>${n.detail.intro}</p>
-              <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
-              <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
-              <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
-              <div class="meta-line" style="margin-top:10px;"><strong>时间：</strong>${fullDate}</div>
+            <div class="poster"><img src="${poster}" alt="${n.title}" loading="lazy"></div>
+            <div class="card-body">
+              <h3 class="card-title">${n.title}</h3>
+              <div class="card-head">
+                <span class="tag ${t.tag}">${t.name}</span>
+                <span class="event-badge ${e.cls}">${e.name}</span>
+              </div>
+              <p class="card-summary">${n.summary}</p>
+              <div class="card-foot">
+                <span class="source">来源：<a href="${n.sourceLink}" target="_blank" rel="noopener">${n.source}</a></span>
+                <span class="card-date">${fullDate}</span>
+                <button class="detail-btn" onclick="toggleDetail(this)">查看详情 ▾</button>
+              </div>
+              <div class="detail">
+                <p>${n.detail.intro}</p>
+                <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
+                <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
+                <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -665,6 +777,12 @@
       currentRange = chip.dataset.range;
       render();
     });
+  });
+
+  // ============ 搜索 ============
+  document.getElementById('searchInput').addEventListener('input', (e) => {
+    keyword = e.target.value.trim();
+    render();
   });
 
   // ============ 滚动淡入 ============

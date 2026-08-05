@@ -24,3 +24,4 @@ $RECYCLE.BIN/
 *.tmp
 *.temp
 node_modules/
+.wrangler/
