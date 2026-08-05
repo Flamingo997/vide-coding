@@ -645,23 +645,22 @@
     advance:  { name: '提档', cls: 'advance' }
   };
 
-  // ============ 海报封面（按标题映射） ============
-  const POSTER_BASE = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?image_size=portrait_4_3&prompt=';
+  // ============ 海报封面（本地文件，按标题映射） ============
   const POSTER_MAP = {
-    '《长安霓裳录》全网首播': 'Ancient Chinese Tang dynasty drama poster, elegant court dancer in flowing silk robes, crimson and gold palace interior, cinematic lighting, vertical movie poster composition, no text',
-    '《深海回响》全国院线上映': 'Deep sea sci-fi thriller movie poster, research submarine descending into dark abyss, eerie blue bioluminescence, cinematic, vertical composition, no text',
-    '《声浪2026》第三季回归开播': 'Music competition stage poster, singer silhouette under dramatic spotlights, vibrant purple and blue haze, vertical composition, no text',
-    '《雾山行》国产动画第二季上线': 'Chinese fantasy animation poster, young warrior in misty mountains, ink wash painting style with bold red accents, vertical composition, no text',
-    '《逆光行者》定档 8 月 8 日全国公映': 'Realistic drama film poster, food delivery rider on electric scooter in rainy neon city street at night, cinematic mood, vertical composition, no text',
-    '《无声告白》爱奇艺迷雾剧场开播': 'Suspense family drama poster, dim suburban house window glowing at dusk, family silhouettes, muted cold tones, vertical composition, no text',
-    '《慢游中国》第二季定档 8 月 2 日开播': 'Slow travel show poster, quiet ancient Chinese town stone alley in warm morning light, cozy nostalgic atmosphere, vertical composition, no text',
-    '《星海战记》提档至 7 月 28 日首播': 'Epic sci-fi space animation poster, starship crossing a colorful nebula, vast starfield, sense of scale, vertical composition, no text',
-    '《夏日晚风》点映开启': 'Youth romance film poster, two teenagers by the sea at golden sunset, warm summer light, soft film grain, vertical composition, no text',
-    '《破晓行动》定档 8 月 15 日优酷独播': 'Crime action drama poster, lone agent silhouette at misty border checkpoint at dawn, teal and orange cinematic tone, vertical composition, no text',
-    '《脑力竞技场》新一季开播': 'Science competition show poster, glowing human brain hologram facing an AI robot head, futuristic blue technology style, vertical composition, no text',
-    '《猫町奇谭》全集上线': 'Healing watercolor animation poster, whimsical hillside town full of cats at warm sunset, soft pastel colors, vertical composition, no text',
-    '《山河笔记》自然纪录片上线': 'Nature documentary poster, majestic Chinese canyon landscape with river and morning mist, golden hour, vertical composition, no text',
-    '《丝路遗珍》定档 8 月 10 日开播': 'Archaeology documentary poster, Silk Road desert ruins with unearthed ancient artifacts and pottery, warm sand tones, vertical composition, no text'
+    '《长安霓裳录》全网首播': 'posters/01_chang_an.jpg',
+    '《深海回响》全国院线上映': 'posters/02_shen_hai.jpg',
+    '《声浪2026》第三季回归开播': 'posters/03_sheng_lang.jpg',
+    '《雾山行》国产动画第二季上线': 'posters/04_wu_shan.jpg',
+    '《逆光行者》定档 8 月 8 日全国公映': 'posters/05_ni_guang.jpg',
+    '《无声告白》爱奇艺迷雾剧场开播': 'posters/06_wu_sheng.jpg',
+    '《慢游中国》第二季定档 8 月 2 日开播': 'posters/07_man_you.jpg',
+    '《星海战记》提档至 7 月 28 日首播': 'posters/08_xing_hai.jpg',
+    '《夏日晚风》点映开启': 'posters/09_xia_ri.jpg',
+    '《破晓行动》定档 8 月 15 日优酷独播': 'posters/10_po_xiao.jpg',
+    '《脑力竞技场》新一季开播': 'posters/11_nao_li.jpg',
+    '《猫町奇谭》全集上线': 'posters/12_mao_ding.jpg',
+    '《山河笔记》自然纪录片上线': 'posters/13_shan_he.jpg',
+    '《丝路遗珍》定档 8 月 10 日开播': 'posters/14_si_lu.jpg'
   };
 
   // ============ 渲染 ============
@@ -716,7 +715,7 @@
       const nodeCls = n.status === 'pending' ? 'tl-node pending' : 'tl-node';
       const evText = n.event === 'online' ? '上线' : (n.event === 'advance' ? '提档' : '定档');
       const fullDate = n.date.replace(/-/g, '/') + ' ' + evText;
-      const poster = POSTER_BASE + encodeURIComponent(POSTER_MAP[n.title]);
+      const poster = POSTER_MAP[n.title];
       return `
         <div class="tl-item" data-idx="${idx}">
           ${sameDay ? '' : `<div class="tl-date">
