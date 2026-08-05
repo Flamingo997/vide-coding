@@ -66,8 +66,10 @@
   <!-- 回到顶部 -->
   <button class="back-top" id="backTop" aria-label="回到顶部">↑</button>
 
-<script src="data.js"></script>
 <script>
+  // 数据来自 data.json，加载完成后启动
+  let NEWS, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TYPE_SIDEBAR_BG, TIMES, WEEKDAYS;
+
   // ============ 状态 ============
   const timelineEl = document.getElementById('timeline');
   let currentType = 'all';
@@ -162,6 +164,7 @@
   };
 
   // ============ 轮播 Banner（使用横版高清大图） ============
+  function initBanner() {
   const BANNER_ITEMS = [
     { title: '《深海回响》全国院线上映', img: 'posters/02_shen_hai_wide.jpg' },
     { title: '《长安霓裳录》全网首播',   img: 'posters/01_chang_an_wide.jpg' },
@@ -207,6 +210,7 @@
   bannerEl.addEventListener('mouseenter', stopAuto);   // 悬停暂停
   bannerEl.addEventListener('mouseleave', startAuto);
   startAuto();
+  }
 
   // ============ 侧边栏分类筛选（切换时页面背景变为品类主题浅色调） ============
   document.querySelectorAll('.side-item').forEach(item => {
@@ -261,8 +265,14 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
-  // ============ 初始渲染 ============
-  render();
+  // ============ 加载数据并启动 ============
+  fetch('data.json')
+    .then(r => r.json())
+    .then(data => {
+      ({ NEWS, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TYPE_SIDEBAR_BG, TIMES, WEEKDAYS } = data);
+      initBanner();
+      render();
+    });
 </script>
 </body>
 </html>
