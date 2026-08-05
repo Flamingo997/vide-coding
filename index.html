@@ -294,9 +294,11 @@
     box-shadow: 0 0 0 2px var(--tc, var(--primary));
   }
 
-  /* ===== 资讯卡片：白卡轻影 + 左侧品类色边 ===== */
+  /* ===== 资讯卡片：白卡轻影 + 左侧品类色边 + 2:3 竖版海报 ===== */
   .card {
     position: relative;
+    display: flex;
+    gap: 16px;
     background: var(--card);
     border-radius: 8px;
     padding: 16px 18px 14px 20px;
@@ -319,6 +321,25 @@
     transform: translateY(-2px);
   }
   .card:hover::before { width: 4px; }
+  /* 2:3 竖版海报封面 */
+  .poster {
+    width: 92px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    aspect-ratio: 2 / 3;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--sidebar-bg);
+  }
+  .poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.4s ease;
+  }
+  .card:hover .poster img { transform: scale(1.06); }
+  .card-main { flex: 1; min-width: 0; }
   .card-top {
     display: flex;
     align-items: center;
@@ -804,21 +825,24 @@
             <div class="tl-item" style="--tc:${t.color}">
               <div class="${nodeCls}"></div>
               <article class="card" onclick="toggleCard(this)">
-                <div class="card-top">
-                  <span class="card-time">${time} · ${EVENT_NAME[n.event]}</span>
-                  <span class="tag-solid">${t.name}</span>
-                </div>
-                <h3 class="card-title">${n.title}<span class="detail-hint">点击卡片展开详情</span></h3>
-                <p class="card-summary">${n.summary}</p>
-                <div class="card-foot">
-                  <span class="source">来源：${n.source}</span>
-                  <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 →</a>
-                </div>
-                <div class="detail">
-                  <p>${n.detail.intro}</p>
-                  <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
-                  <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
-                  <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
+                <div class="poster"><img src="${POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy"></div>
+                <div class="card-main">
+                  <div class="card-top">
+                    <span class="card-time">${time} · ${EVENT_NAME[n.event]}</span>
+                    <span class="tag-solid">${t.name}</span>
+                  </div>
+                  <h3 class="card-title">${n.title}<span class="detail-hint">点击卡片展开详情</span></h3>
+                  <p class="card-summary">${n.summary}</p>
+                  <div class="card-foot">
+                    <span class="source">来源：${n.source}</span>
+                    <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 →</a>
+                  </div>
+                  <div class="detail">
+                    <p>${n.detail.intro}</p>
+                    <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
+                    <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
+                    <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
+                  </div>
                 </div>
               </article>
             </div>
@@ -835,9 +859,13 @@
     card.querySelector('.detail').classList.toggle('open');
   };
 
-  // ============ 轮播 Banner ============
-  const BANNER_TITLES = ['《深海回响》全国院线上映', '《长安霓裳录》全网首播', '《星海战记》提档至 7 月 28 日首播'];
-  const bannerItems = BANNER_TITLES.map(t => NEWS.find(n => n.title === t));
+  // ============ 轮播 Banner（使用横版高清大图） ============
+  const BANNER_ITEMS = [
+    { title: '《深海回响》全国院线上映', img: 'posters/02_shen_hai_wide.jpg' },
+    { title: '《长安霓裳录》全网首播',   img: 'posters/01_chang_an_wide.jpg' },
+    { title: '《星海战记》提档至 7 月 28 日首播', img: 'posters/08_xing_hai_wide.jpg' }
+  ];
+  const bannerItems = BANNER_ITEMS.map(b => ({ ...NEWS.find(n => n.title === b.title), wide: b.img }));
   const slidesEl = document.getElementById('slides');
   const dotsEl = document.getElementById('dots');
   let slideIdx = 0;
@@ -846,7 +874,7 @@
   slidesEl.innerHTML = bannerItems.map((n, i) => {
     const t = TYPE_MAP[n.type];
     return `
-      <div class="slide${i === 0 ? ' on' : ''}" style="background-image:url('${POSTER_MAP[n.title]}')">
+      <div class="slide${i === 0 ? ' on' : ''}" style="background-image:url('${n.wide}')">
         <div class="slide-info">
           <span class="slide-tag" style="background:${t.color}">${t.name}</span>
           <h2>${n.title}</h2>
