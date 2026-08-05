@@ -43,6 +43,7 @@
     display: flex;
     flex-direction: column;
     z-index: 50;
+    transition: background 0.4s ease;
   }
   .brand h1 {
     font-size: 20px;
@@ -770,6 +771,15 @@
     anime: '#EBF9F0',   // 草绿浅底
     doc:   '#F3EFFF'    // 浅紫浅底
   };
+  // 侧边栏背景色：比页面底色再深一度的同色系
+  const TYPE_SIDEBAR_BG = {
+    all:   '#F0F3F8',
+    movie: '#FFE8D8',
+    drama: '#E2EEFF',
+    show:  '#FADFF0',
+    anime: '#DFF4E6',
+    doc:   '#EAE3FF'
+  };
 
   // 模拟发布时分（按数据顺序）
   const TIMES = ['09:30','10:00','11:20','14:00','15:30','16:40','18:00','19:20','20:00','21:00','08:40','13:10','10:40','17:20'];
@@ -922,6 +932,7 @@
       item.classList.add('active');
       currentType = item.dataset.type;
       document.body.style.background = TYPE_BG[currentType] || TYPE_BG.all;
+      document.querySelector('.sidebar').style.background = TYPE_SIDEBAR_BG[currentType] || TYPE_SIDEBAR_BG.all;
       render();
     });
   });
