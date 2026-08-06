@@ -1,9 +1,24 @@
 // Cloudflare Pages Function：TMDB 真实影视数据接口
 // GET /api/tmdb  返回本站时间线格式的真实影视上新数据
 // 数据来源：TMDB（themoviedb.org），Key 存于 Pages 环境变量 TMDB_API_KEY
+// 品类映射：电影 movie / 电视剧 drama / 综艺 show / 动漫 anime / 纪录片 doc
 
 const BASE = 'https://api.themoviedb.org/3';
 const IMG = 'https://image.tmdb.org/t/p/w342';
+
+// TMDB 类型 ID → 本站品类
+const TV_GENRE_TYPE = {
+  16: 'anime',    // 动画
+  99: 'doc',      // 纪录片
+  10764: 'show',  // 真人秀
+  10767: 'show',  // 脱口秀
+  10766: 'drama', // 肥皂剧
+  10765: 'drama'  // 科幻奇幻剧
+};
+const MOVIE_GENRE_TYPE = {
+  16: 'anime',  // 动画
+  99: 'doc'     // 纪录片
+};
 
 async function tmdb(path, key) {
   const sep = path.includes('?') ? '&' : '?';
@@ -22,6 +37,33 @@ function fmtDate(dateStr) {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
+// 电视剧/综艺/动漫/纪录片条目
+function mapShow(s, genreNames) {
+  const gids = s.genre_ids || [];
+  let type = 'drama';
+  for (const id of gids) {
+    if (TV_GENRE_TYPE[id]) { type = TV_GENRE_TYPE[id]; break; }
+  }
+  const genres = gids.map(id => genreNames[id]).filter(Boolean).join(' / ');
+  return {
+    date: s.first_air_date,
+    type,
+    event: 'online',
+    status: 'done',
+    title: `《${s.name}》热播中`,
+    summary: cut(s.overview, 80),
+    source: 'TMDB',
+    sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
+    poster: s.poster_path ? IMG + s.poster_path : '',
+    detail: {
+      intro: s.overview || '暂无中文简介。',
+      cast: genres || '暂无',
+      platform: `TMDB 评分：${s.vote_average.toFixed(1)}（${s.vote_count} 人评价）`,
+      ep: (s.origin_country || []).includes('CN') ? '华语内容' : '海外内容'
+    }
+  };
+}
+
 export async function onRequestGet(context) {
   const key = context.env.TMDB_API_KEY;
   if (!key) {
@@ -31,10 +73,11 @@ export async function onRequestGet(context) {
   }
 
   try {
-    const [nowPlaying, upcoming, onAir, movieGenres, tvGenres] = await Promise.all([
+    const [nowPlaying, upcoming, onAir, tvPopular, movieGenres, tvGenres] = await Promise.all([
       tmdb('/movie/now_playing?region=CN&page=1', key),
       tmdb('/movie/upcoming?region=CN&page=1', key),
       tmdb('/tv/on_the_air?page=1', key),
+      tmdb('/tv/popular?page=1', key),
       tmdb('/genre/movie/list', key),
       tmdb('/genre/tv/list', key)
     ]);
@@ -43,13 +86,20 @@ export async function onRequestGet(context) {
     const tg = Object.fromEntries((tvGenres.genres || []).map(g => [g.id, g.name]));
 
     const items = [];
+    const seen = new Set();
 
-    // 正在热映 → 院线电影 · 上线
-    (nowPlaying.results || []).slice(0, 10).forEach(m => {
-      const genres = (m.genre_ids || []).map(id => mg[id]).filter(Boolean).join(' / ');
+    // 正在热映 → 按类型细分为 电影/动漫/纪录片 · 上线
+    (nowPlaying.results || []).slice(0, 12).forEach(m => {
+      seen.add('m' + m.id);
+      const gids = m.genre_ids || [];
+      let type = 'movie';
+      for (const id of gids) {
+        if (MOVIE_GENRE_TYPE[id]) { type = MOVIE_GENRE_TYPE[id]; break; }
+      }
+      const genres = gids.map(id => mg[id]).filter(Boolean).join(' / ');
       items.push({
         date: m.release_date,
-        type: 'movie',
+        type,
         event: 'online',
         status: 'done',
         title: `《${m.title}》正在热映`,
@@ -66,15 +116,22 @@ export async function onRequestGet(context) {
       });
     });
 
-    // 即将上映 → 院线电影 · 定档
-    (upcoming.results || []).slice(0, 10).forEach(m => {
-      const genres = (m.genre_ids || []).map(id => mg[id]).filter(Boolean).join(' / ');
+    // 即将上映 → 按类型细分 · 定档（去重已热映条目）
+    (upcoming.results || []).slice(0, 12).forEach(m => {
+      if (seen.has('m' + m.id)) return;
+      const gids = m.genre_ids || [];
+      let type = 'movie';
+      for (const id of gids) {
+        if (MOVIE_GENRE_TYPE[id]) { type = MOVIE_GENRE_TYPE[id]; break; }
+      }
+      const genres = gids.map(id => mg[id]).filter(Boolean).join(' / ');
+      const isPast = new Date(m.release_date) < new Date();
       items.push({
         date: m.release_date,
-        type: 'movie',
-        event: 'release',
-        status: 'pending',
-        title: `《${m.title}》定档${fmtDate(m.release_date)}`,
+        type,
+        event: isPast ? 'online' : 'release',
+        status: isPast ? 'done' : 'pending',
+        title: isPast ? `《${m.title}》正在热映` : `《${m.title}》定档${fmtDate(m.release_date)}`,
         summary: cut(m.overview, 80),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
@@ -88,35 +145,26 @@ export async function onRequestGet(context) {
       });
     });
 
-    // 正在播出 → 电视剧 · 上线
-    (onAir.results || []).slice(0, 10).forEach(s => {
-      const genres = (s.genre_ids || []).map(id => tg[id]).filter(Boolean).join(' / ');
-      items.push({
-        date: s.first_air_date,
-        type: 'drama',
-        event: 'online',
-        status: 'done',
-        title: `《${s.name}》热播中`,
-        summary: cut(s.overview, 80),
-        source: 'TMDB',
-        sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
-        poster: s.poster_path ? IMG + s.poster_path : '',
-        detail: {
-          intro: s.overview || '暂无中文简介。',
-          cast: genres || '暂无',
-          platform: `TMDB 评分：${s.vote_average.toFixed(1)}（${s.vote_count} 人评价）`,
-          ep: (s.origin_country || []).includes('CN') ? '华语剧集' : '海外剧集'
-        }
-      });
+    // 正在播出 + 热门剧集/综艺/动漫/纪录片（合并去重）
+    const tvSeen = new Set();
+    [...(onAir.results || []), ...(tvPopular.results || [])].forEach(s => {
+      if (tvSeen.has(s.id)) return;
+      tvSeen.add(s.id);
+      items.push(mapShow(s, tg));
     });
 
     // 过滤无日期条目并按日期倒序
     const list = items.filter(n => n.date).sort((a, b) => new Date(b.date) - new Date(a.date));
 
+    // 各品类数量统计（便于调用方了解覆盖情况）
+    const coverage = {};
+    list.forEach(n => { coverage[n.type] = (coverage[n.type] || 0) + 1; });
+
     return new Response(JSON.stringify({
       code: 0,
       message: 'ok',
       total: list.length,
+      coverage,
       attribution: '数据来源 TMDB（themoviedb.org）',
       data: list
     }), {
