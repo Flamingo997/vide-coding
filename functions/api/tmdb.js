@@ -131,7 +131,7 @@ export async function onRequestGet(context) {
       items.push({
         date: m.release_date,
         type,
-        event: isPast ? 'online' : 'release',
+        event: isPast ? 'online' : 'schedule',
         status: isPast ? 'done' : 'pending',
         title: isPast ? `《${m.title}》正在热映` : `《${m.title}》定档${fmtDate(m.release_date)}`,
         summary: cut(m.overview, 80),

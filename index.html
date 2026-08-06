@@ -166,11 +166,14 @@
   // ============ 轮播 Banner（使用横版高清大图） ============
   function initBanner() {
   const BANNER_ITEMS = [
-    { title: '《深海回响》全国院线上映', img: 'posters/02_shen_hai_wide.jpg' },
-    { title: '《长安霓裳录》全网首播',   img: 'posters/01_chang_an_wide.jpg' },
-    { title: '《星海战记》提档至 7 月 28 日首播', img: 'posters/08_xing_hai_wide.jpg' }
+    { title: '《深海回响》全国院线上映', wide: 'posters/02_shen_hai_wide.jpg', type: 'movie',
+      summary: '科幻惊悚电影《深海回响》登陆全国院线，深海科考队遭遇未知生物的惊险故事。' },
+    { title: '《长安霓裳录》全网首播',   wide: 'posters/01_chang_an_wide.jpg', type: 'drama',
+      summary: '古装悬疑剧《长安霓裳录》全网首播，讲述盛唐长安城中一桩牵动朝野的霓裳羽衣案。' },
+    { title: '《星海战记》提档首播', wide: 'posters/08_xing_hai_wide.jpg', type: 'anime',
+      summary: '星际舰队远征深空，年轻舰长带领船员穿越未知星域寻找人类新家园。' }
   ];
-  const bannerItems = BANNER_ITEMS.map(b => ({ ...NEWS.find(n => n.title === b.title), wide: b.img }));
+  const bannerItems = BANNER_ITEMS;
   const slidesEl = document.getElementById('slides');
   const dotsEl = document.getElementById('dots');
   let slideIdx = 0;
@@ -271,7 +274,7 @@
     .then(data => {
       ({ NEWS, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TYPE_SIDEBAR_BG, TIMES, WEEKDAYS } = data);
       // 尝试加载 TMDB 真实数据（带版本参数防浏览器缓存旧版），失败时保留本地模拟数据
-      return fetch('/api/tmdb?v=3')
+      return fetch('/api/tmdb?v=4')
         .then(r => r.json())
         .then(t => {
           if (t && t.code === 0 && t.data && t.data.length) NEWS = t.data;
