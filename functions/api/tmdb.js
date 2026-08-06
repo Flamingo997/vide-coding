@@ -73,11 +73,13 @@ export async function onRequestGet(context) {
   }
 
   try {
-    const [nowPlaying, upcoming, onAir, tvPopular, movieGenres, tvGenres] = await Promise.all([
+    const [nowPlaying, upcoming, onAir, tvPopular, docMovies, docTv, movieGenres, tvGenres] = await Promise.all([
       tmdb('/movie/now_playing?region=CN&page=1', key),
       tmdb('/movie/upcoming?region=CN&page=1', key),
       tmdb('/tv/on_the_air?page=1', key),
       tmdb('/tv/popular?page=1', key),
+      tmdb('/discover/movie?with_genres=99&sort_by=popularity.desc&page=1', key),
+      tmdb('/discover/tv?with_genres=99&sort_by=popularity.desc&page=1', key),
       tmdb('/genre/movie/list', key),
       tmdb('/genre/tv/list', key)
     ]);
@@ -151,6 +153,53 @@ export async function onRequestGet(context) {
       if (tvSeen.has(s.id)) return;
       tvSeen.add(s.id);
       items.push(mapShow(s, tg));
+    });
+
+    // 纪录片专门榜单：电影纪录片 + TV纪录片，按热度排序，去重后补足
+    const docSeen = new Set();
+    (docMovies.results || []).slice(0, 8).forEach(m => {
+      if (seen.has('m' + m.id) || docSeen.has(m.id)) return;
+      docSeen.add(m.id);
+      const genres = (m.genre_ids || []).map(id => mg[id]).filter(Boolean).join(' / ');
+      items.push({
+        date: m.release_date,
+        type: 'doc',
+        event: 'online',
+        status: 'done',
+        title: `《${m.title}》纪录电影热映`,
+        summary: cut(m.overview, 80),
+        source: 'TMDB',
+        sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
+        poster: m.poster_path ? IMG + m.poster_path : '',
+        detail: {
+          intro: m.overview || '暂无中文简介。',
+          cast: genres || '纪录',
+          platform: `TMDB 评分：${m.vote_average.toFixed(1)}（${m.vote_count} 人评价）`,
+          ep: m.original_language === 'zh' ? '华语纪录片' : '海外纪录片'
+        }
+      });
+    });
+    (docTv.results || []).slice(0, 8).forEach(s => {
+      if (tvSeen.has(s.id) || docSeen.has(s.id)) return;
+      docSeen.add(s.id);
+      const genres = (s.genre_ids || []).map(id => tg[id]).filter(Boolean).join(' / ');
+      items.push({
+        date: s.first_air_date,
+        type: 'doc',
+        event: 'online',
+        status: 'done',
+        title: `《${s.name}》纪录片热播中`,
+        summary: cut(s.overview, 80),
+        source: 'TMDB',
+        sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
+        poster: s.poster_path ? IMG + s.poster_path : '',
+        detail: {
+          intro: s.overview || '暂无中文简介。',
+          cast: genres || '纪录',
+          platform: `TMDB 评分：${s.vote_average.toFixed(1)}（${s.vote_count} 人评价）`,
+          ep: (s.origin_country || []).includes('CN') ? '华语纪录片' : '海外纪录片'
+        }
+      });
     });
 
     // 过滤无日期条目并按日期倒序
