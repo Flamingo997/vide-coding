@@ -220,7 +220,7 @@ export async function onRequestGet(context) {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=1800'
+        'Cache-Control': 'public, max-age=300'
       }
     });
   } catch (e) {

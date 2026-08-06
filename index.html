@@ -270,8 +270,8 @@
     .then(r => r.json())
     .then(data => {
       ({ NEWS, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TYPE_SIDEBAR_BG, TIMES, WEEKDAYS } = data);
-      // 尝试加载 TMDB 真实数据，失败时保留本地模拟数据
-      return fetch('/api/tmdb')
+      // 尝试加载 TMDB 真实数据（带版本参数防浏览器缓存旧版），失败时保留本地模拟数据
+      return fetch('/api/tmdb?v=3')
         .then(r => r.json())
         .then(t => {
           if (t && t.code === 0 && t.data && t.data.length) NEWS = t.data;
