@@ -57,8 +57,8 @@
 
     <!-- 底部说明 -->
     <footer class="footer">
-      <p>本页面所有影视资讯均为模拟数据，仅用于产品原型演示，不代表真实上线信息。</p>
-      <p>资讯来源、定档时间等内容均为虚构，请勿作为实际观影决策依据。</p>
+      <p>本页面影视资讯来自 TMDB（themoviedb.org），API 异常时显示本地模拟数据，仅供演示，不作为实际观影决策依据。</p>
+      <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
       <p class="version">Version 0.3</p>
     </footer>
   </div>
@@ -77,7 +77,7 @@
   let keyword = '';
 
   // 今天基准（用于本周/本月/即将上线判定）
-  const TODAY = new Date('2026-07-23');
+  const TODAY = new Date();
 
   function inRange(dateStr, range) {
     const d = new Date(dateStr);
@@ -129,7 +129,7 @@
             <div class="tl-item" style="--tc:${t.color}">
               <div class="${nodeCls}"></div>
               <article class="card" onclick="toggleCard(this)">
-                <div class="poster"><img src="${POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy"></div>
+                <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy"></div>
                 <div class="card-main">
                   <div class="card-top">
                     <span class="card-time">${time} · ${EVENT_NAME[n.event]}</span>
@@ -270,6 +270,15 @@
     .then(r => r.json())
     .then(data => {
       ({ NEWS, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TYPE_SIDEBAR_BG, TIMES, WEEKDAYS } = data);
+      // 尝试加载 TMDB 真实数据，失败时保留本地模拟数据
+      return fetch('/api/tmdb')
+        .then(r => r.json())
+        .then(t => {
+          if (t && t.code === 0 && t.data && t.data.length) NEWS = t.data;
+        })
+        .catch(() => {});
+    })
+    .then(() => {
       initBanner();
       render();
     });
