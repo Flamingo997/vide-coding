@@ -3,80 +3,124 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>影视上新快讯 · 每日上新定档速览</title>
+<title>影新鲜 · 影视上新定档时间线</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-  <!-- 左侧固定侧边栏 -->
-  <aside class="sidebar">
-    <div class="brand">
-      <h1>影视上新快讯</h1>
-      <p>每日上新 · 定档速览</p>
-    </div>
-    <div class="side-search">
-      <input type="text" id="searchInput" placeholder="搜索作品 / 关键词">
-    </div>
-    <div class="side-label">内容分类</div>
-    <nav id="sideNav">
-      <button class="side-item active" data-type="all"><span class="dot" style="background:#1A1F2E"></span>全部</button>
-      <button class="side-item" data-type="movie"><span class="dot" style="background:var(--c-movie)"></span>院线电影</button>
-      <button class="side-item" data-type="drama"><span class="dot" style="background:var(--c-drama)"></span>电视剧</button>
-      <button class="side-item" data-type="show"><span class="dot" style="background:var(--c-show)"></span>综艺</button>
-      <button class="side-item" data-type="anime"><span class="dot" style="background:var(--c-anime)"></span>动漫</button>
-      <button class="side-item" data-type="doc"><span class="dot" style="background:var(--c-doc)"></span>纪录片</button>
-    </nav>
-    <div class="side-foot">
-      <span class="demo-tag">模拟演示版本</span>
-      <p>资讯均为虚构数据，仅供原型演示</p>
-    </div>
-  </aside>
-
-  <!-- 右侧内容区 -->
-  <div class="content">
-
-    <!-- 轮播 Banner -->
-    <section class="banner" id="banner">
-      <div class="slides" id="slides"></div>
-      <button class="banner-arrow prev" id="prevBtn" aria-label="上一个">‹</button>
-      <button class="banner-arrow next" id="nextBtn" aria-label="下一个">›</button>
-      <div class="banner-dots" id="dots"></div>
-    </section>
-
-    <!-- 时间范围筛选 -->
-    <section class="range-bar">
-      <span class="range-label">时间</span>
-      <button class="chip active" data-range="all">全部</button>
-      <button class="chip" data-range="week">本周</button>
-      <button class="chip" data-range="month">本月</button>
-      <button class="chip" data-range="upcoming">即将上线</button>
-    </section>
-
-    <!-- 时间线主体 -->
-    <main class="timeline" id="timeline"></main>
-
-    <!-- 底部说明 -->
-    <footer class="footer">
-      <p>本页面影视资讯来自 TMDB（themoviedb.org），API 异常时显示本地模拟数据，仅供演示，不作为实际观影决策依据。</p>
-      <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
-      <p class="version">Version 0.3</p>
-    </footer>
+<!-- 顶部通栏导航（吸顶） -->
+<header class="topnav">
+  <div class="brand" data-view="home">
+    <span class="brand-name">影新鲜</span>
+    <span class="brand-slogan">每日上新 · 定档速览</span>
   </div>
+  <nav class="nav" id="nav">
+    <a class="nav-item active" data-view="home">首页</a>
+    <a class="nav-item" data-view="timeline" data-type="all">全量时间线</a>
+    <a class="nav-item" data-view="timeline" data-type="movie">电影</a>
+    <a class="nav-item" data-view="timeline" data-type="drama">电视剧</a>
+    <a class="nav-item" data-view="timeline" data-type="show">综艺</a>
+    <a class="nav-item" data-view="timeline" data-type="anime">动漫</a>
+    <a class="nav-item optional" data-view="timeline" data-type="doc">纪录片</a>
+    <a class="nav-item optional" data-view="timeline" data-type="duan">短剧</a>
+    <span class="nav-more" id="navMore">更多 ▾
+      <span class="more-menu">
+        <a data-view="timeline" data-type="doc">纪录片</a>
+        <a data-view="timeline" data-type="duan">短剧</a>
+      </span>
+    </span>
+  </nav>
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="搜索作品 / 关键词">
+  </div>
+</header>
 
-  <!-- 回到顶部 -->
-  <button class="back-top" id="backTop" aria-label="回到顶部">↑</button>
+<!-- 首页视图 -->
+<main id="homeView">
+  <div class="home-layout">
+    <div class="home-main">
+
+      <!-- 轮播 Banner -->
+      <section class="banner" id="banner">
+        <div class="slides" id="slides"></div>
+        <button class="banner-btn prev" id="prevBtn" aria-label="上一张">‹</button>
+        <button class="banner-btn next" id="nextBtn" aria-label="下一张">›</button>
+        <div class="dots" id="dots"></div>
+      </section>
+
+      <!-- 本周上新 TOP 榜 -->
+      <section class="block">
+        <h2 class="block-title">本周上新 TOP 榜</h2>
+        <div class="top10" id="top10"></div>
+      </section>
+
+      <!-- 分品类上新卡片组 -->
+      <div id="catGroups"></div>
+
+      <!-- 综合定档快讯时间线 -->
+      <section class="block">
+        <h2 class="block-title">综合定档快讯</h2>
+        <div class="timeline" id="homeTimeline"></div>
+      </section>
+    </div>
+
+    <!-- 右侧边栏 -->
+    <aside class="home-side">
+      <div class="side-card" id="boxOfficeCard">
+        <h3 class="side-title">今日票房</h3>
+        <div id="boxOffice"></div>
+        <a class="side-link" id="boxOfficeMore">查看更多电影资讯 →</a>
+      </div>
+
+      <div class="side-card market-card" id="marketCard" title="点击查看猫眼专业版票房大盘">
+        <div class="market-label">今日大盘（总票房）</div>
+        <div class="market-num" id="marketNum">--</div>
+        <div class="market-meta" id="marketMeta">数据更新中…</div>
+        <div class="market-go">猫眼专业版 ↗</div>
+      </div>
+
+      <div class="side-card">
+        <h3 class="side-title">影视资讯</h3>
+        <div id="flashList"></div>
+        <div class="flash-src">资讯来源：环球网</div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- 分类/全量时间线视图 -->
+<main id="tlView" hidden>
+  <div class="tl-page" id="tlPage">
+    <h1 class="tl-title" id="tlTitle">全量时间线</h1>
+    <div class="range-row" id="rangeRow">
+      <span class="range-label">时间</span>
+      <button class="pill active" data-range="all">全部</button>
+      <button class="pill" data-range="week">本周</button>
+      <button class="pill" data-range="month">本月</button>
+      <button class="pill" data-range="upcoming">即将上线</button>
+    </div>
+    <div class="timeline" id="timeline"></div>
+  </div>
+</main>
+
+<footer class="footer">
+  <p>本页面影视资讯来自 TMDB（themoviedb.org），API 异常时显示本地模拟数据，仅供演示，不作为实际观影决策依据。</p>
+  <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+  <p class="version">Version 0.4</p>
+</footer>
+
+<button class="back-top" id="backTop" aria-label="回到顶部">↑</button>
 
 <script>
   // 数据来自 data.json，加载完成后启动
-  let NEWS, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TYPE_SIDEBAR_BG, TIMES, WEEKDAYS;
+  let NEWS, NEWS_FLASH, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS;
 
   // ============ 状态 ============
-  const timelineEl = document.getElementById('timeline');
+  let currentView = 'home';   // home | timeline
   let currentType = 'all';
   let currentRange = 'all';
   let keyword = '';
 
-  // 今天基准（用于本周/本月/即将上线判定）
   const TODAY = new Date();
 
   function inRange(dateStr, range) {
@@ -93,24 +137,124 @@
     return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + WEEKDAYS[d.getDay()];
   }
 
-  // ============ 渲染时间线（按日期分组） ============
-  function render() {
-    const filtered = NEWS.filter(n => {
-      const typeOk = currentType === 'all' || n.type === currentType;
-      const rangeOk = inRange(n.date, currentRange);
-      const kwOk = !keyword || n.title.includes(keyword) || n.summary.includes(keyword);
-      return typeOk && rangeOk && kwOk;
+  // 生成稳定的模拟票房（万）：同一影片每次结果一致
+  function pseudoBox(title, seed) {
+    let h = seed * 7919;
+    for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) % 100000;
+    return 300 + (h % 4700);
+  }
+
+  // ============ 视图切换 ============
+  function goView(view, type) {
+    currentView = view;
+    currentType = type || 'all';
+    document.getElementById('homeView').hidden = view !== 'home';
+    document.getElementById('tlView').hidden = view !== 'timeline';
+
+    // 导航选中态 + 主题色
+    const themeColor = view === 'timeline' && currentType !== 'all'
+      ? TYPE_MAP[currentType].color : '#2F86FF';
+    document.documentElement.style.setProperty('--theme', themeColor);
+    document.body.style.background = view === 'timeline'
+      ? (TYPE_BG[currentType] || TYPE_BG.all) : TYPE_BG.all;
+
+    document.querySelectorAll('.nav-item, .more-menu a').forEach(a => {
+      a.classList.toggle('active', a.dataset.view === view && (a.dataset.type || '') === (view === 'home' ? '' : currentType));
     });
 
+    if (view === 'timeline') {
+      document.getElementById('tlTitle').textContent =
+        currentType === 'all' ? '全量时间线' : TYPE_MAP[currentType].name;
+      renderTimeline(document.getElementById('timeline'), { type: currentType, range: currentRange, keyword });
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  document.querySelectorAll('.nav-item, .more-menu a, .brand').forEach(el => {
+    el.addEventListener('click', () => goView(el.dataset.view, el.dataset.type));
+  });
+
+  // ============ 时间范围筛选 ============
+  document.querySelectorAll('#rangeRow .pill').forEach(p => {
+    p.addEventListener('click', () => {
+      document.querySelectorAll('#rangeRow .pill').forEach(x => x.classList.remove('active'));
+      p.classList.add('active');
+      currentRange = p.dataset.range;
+      renderTimeline(document.getElementById('timeline'), { type: currentType, range: currentRange, keyword });
+    });
+  });
+
+  // ============ 搜索 ============
+  document.getElementById('searchInput').addEventListener('input', e => {
+    keyword = e.target.value.trim();
+    if (keyword && currentView === 'home') { goView('timeline', 'all'); return; }
+    if (currentView === 'timeline') {
+      renderTimeline(document.getElementById('timeline'), { type: currentType, range: currentRange, keyword });
+    }
+  });
+
+  // ============ 轮播 Banner（数据独立，不依赖 NEWS） ============
+  function initBanner() {
+    const BANNER_ITEMS = [
+      { title: '《深海回响》全国院线上映', wide: 'posters/02_shen_hai_wide.jpg', type: 'movie',
+        summary: '科幻惊悚电影《深海回响》登陆全国院线，深海科考队遭遇未知生物的惊险故事。' },
+      { title: '《长安霓裳录》全网首播', wide: 'posters/01_chang_an_wide.jpg', type: 'drama',
+        summary: '古装悬疑剧《长安霓裳录》全网首播，讲述盛唐长安城中一桩牵动朝野的霓裳羽衣案。' },
+      { title: '《星海战记》提档首播', wide: 'posters/08_xing_hai_wide.jpg', type: 'anime',
+        summary: '星际舰队远征深空，年轻舰长带领船员穿越未知星域寻找人类新家园。' }
+    ];
+    const slidesEl = document.getElementById('slides');
+    const dotsEl = document.getElementById('dots');
+    let slideIdx = 0;
+    let slideTimer = null;
+
+    slidesEl.innerHTML = BANNER_ITEMS.map((n, i) => {
+      const t = TYPE_MAP[n.type];
+      return `
+        <div class="slide${i === 0 ? ' on' : ''}" style="background-image:url('${n.wide}')">
+          <div class="slide-info">
+            <span class="slide-tag" style="background:${t.color}">${t.name}</span>
+            <h2>${n.title}</h2>
+            <p>${n.summary}</p>
+          </div>
+        </div>`;
+    }).join('');
+    dotsEl.innerHTML = BANNER_ITEMS.map((_, i) => `<span class="${i === 0 ? 'on' : ''}" data-i="${i}"></span>`).join('');
+
+    function goSlide(i) {
+      slideIdx = (i + BANNER_ITEMS.length) % BANNER_ITEMS.length;
+      slidesEl.querySelectorAll('.slide').forEach((s, k) => s.classList.toggle('on', k === slideIdx));
+      dotsEl.querySelectorAll('span').forEach((s, k) => s.classList.toggle('on', k === slideIdx));
+    }
+    function startAuto() { stopAuto(); slideTimer = setInterval(() => goSlide(slideIdx + 1), 4000); }
+    function stopAuto() { if (slideTimer) clearInterval(slideTimer); }
+
+    document.getElementById('prevBtn').addEventListener('click', () => goSlide(slideIdx - 1));
+    document.getElementById('nextBtn').addEventListener('click', () => goSlide(slideIdx + 1));
+    dotsEl.querySelectorAll('span').forEach(s => s.addEventListener('click', () => goSlide(Number(s.dataset.i))));
+    const bannerEl = document.getElementById('banner');
+    bannerEl.addEventListener('mouseenter', stopAuto);
+    bannerEl.addEventListener('mouseleave', startAuto);
+    startAuto();
+  }
+
+  // ============ 时间线渲染（通用，按日期分组） ============
+  function renderTimeline(container, opt) {
+    const { type = 'all', range = 'all', keyword: kw = '', limit = 0 } = opt;
+    let filtered = NEWS.filter(n => {
+      const typeOk = type === 'all' || n.type === type;
+      const rangeOk = inRange(n.date, range);
+      const kwOk = !kw || n.title.includes(kw) || n.summary.includes(kw);
+      return typeOk && rangeOk && kwOk;
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    if (limit > 0) filtered = filtered.slice(0, limit);
+
     if (filtered.length === 0) {
-      timelineEl.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
+      container.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
       return;
     }
 
-    // 按日期倒序
-    filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    // 按日期分组：同一天资讯归为一组
     const groups = [];
     filtered.forEach(n => {
       const last = groups[groups.length - 1];
@@ -118,11 +262,12 @@
       else groups.push({ date: n.date, items: [n] });
     });
 
-    timelineEl.innerHTML = groups.map(g => `
+    container.innerHTML = groups.map(g => `
       <section class="day-group">
         <h2 class="day-head">${dayLabel(g.date)}</h2>
         ${g.items.map(n => {
           const t = TYPE_MAP[n.type];
+          if (!t) return '';
           const time = TIMES[NEWS.indexOf(n) % TIMES.length];
           const nodeCls = n.status === 'pending' ? 'tl-node pending' : 'tl-node';
           return `
@@ -149,141 +294,131 @@
                   </div>
                 </div>
               </article>
-            </div>
-          `;
+            </div>`;
         }).join('')}
       </section>
     `).join('');
-
-    observeItems();
   }
 
-  // ============ 点击卡片展开/收起详情 ============
-  window.toggleCard = function(card) {
+  window.toggleCard = function (card) {
     card.querySelector('.detail').classList.toggle('open');
   };
 
-  // ============ 轮播 Banner（使用横版高清大图） ============
-  function initBanner() {
-  const BANNER_ITEMS = [
-    { title: '《深海回响》全国院线上映', wide: 'posters/02_shen_hai_wide.jpg', type: 'movie',
-      summary: '科幻惊悚电影《深海回响》登陆全国院线，深海科考队遭遇未知生物的惊险故事。' },
-    { title: '《长安霓裳录》全网首播',   wide: 'posters/01_chang_an_wide.jpg', type: 'drama',
-      summary: '古装悬疑剧《长安霓裳录》全网首播，讲述盛唐长安城中一桩牵动朝野的霓裳羽衣案。' },
-    { title: '《星海战记》提档首播', wide: 'posters/08_xing_hai_wide.jpg', type: 'anime',
-      summary: '星际舰队远征深空，年轻舰长带领船员穿越未知星域寻找人类新家园。' }
-  ];
-  const bannerItems = BANNER_ITEMS;
-  const slidesEl = document.getElementById('slides');
-  const dotsEl = document.getElementById('dots');
-  let slideIdx = 0;
-  let slideTimer = null;
-
-  slidesEl.innerHTML = bannerItems.map((n, i) => {
-    const t = TYPE_MAP[n.type];
-    return `
-      <div class="slide${i === 0 ? ' on' : ''}" style="background-image:url('${n.wide}')">
-        <div class="slide-info">
-          <span class="slide-tag" style="background:${t.color}">${t.name}</span>
-          <h2>${n.title}</h2>
-          <p>${n.summary}</p>
-        </div>
-      </div>
-    `;
-  }).join('');
-  dotsEl.innerHTML = bannerItems.map((_, i) => `<span class="${i === 0 ? 'on' : ''}" data-i="${i}"></span>`).join('');
-
-  function goSlide(i) {
-    slideIdx = (i + bannerItems.length) % bannerItems.length;
-    slidesEl.querySelectorAll('.slide').forEach((s, k) => s.classList.toggle('on', k === slideIdx));
-    dotsEl.querySelectorAll('span').forEach((s, k) => s.classList.toggle('on', k === slideIdx));
-  }
-  function startAuto() {
-    stopAuto();
-    slideTimer = setInterval(() => goSlide(slideIdx + 1), 4000);   // 自动轮播 4 秒
-  }
-  function stopAuto() { if (slideTimer) clearInterval(slideTimer); }
-
-  document.getElementById('prevBtn').addEventListener('click', () => goSlide(slideIdx - 1));
-  document.getElementById('nextBtn').addEventListener('click', () => goSlide(slideIdx + 1));
-  dotsEl.querySelectorAll('span').forEach(s => {
-    s.addEventListener('click', () => goSlide(Number(s.dataset.i)));
-  });
-  const bannerEl = document.getElementById('banner');
-  bannerEl.addEventListener('mouseenter', stopAuto);   // 悬停暂停
-  bannerEl.addEventListener('mouseleave', startAuto);
-  startAuto();
-  }
-
-  // ============ 侧边栏分类筛选（切换时页面背景变为品类主题浅色调） ============
-  document.querySelectorAll('.side-item').forEach(item => {
-    item.addEventListener('click', () => {
-      document.querySelectorAll('.side-item').forEach(c => c.classList.remove('active'));
-      item.classList.add('active');
-      currentType = item.dataset.type;
-      document.body.style.background = TYPE_BG[currentType] || TYPE_BG.all;
-      document.querySelector('.sidebar').style.background = TYPE_SIDEBAR_BG[currentType] || TYPE_SIDEBAR_BG.all;
-      render();
+  // ============ 首页：本周上新 TOP10 ============
+  function renderTop10() {
+    const items = NEWS
+      .filter(n => { const d = Math.round((new Date(n.date) - TODAY) / 86400000); return d >= -7; })
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 10);
+    document.getElementById('top10').innerHTML = items.map((n, i) => {
+      const t = TYPE_MAP[n.type];
+      if (!t) return '';
+      return `
+        <div class="top-item" data-type="${n.type}">
+          <span class="top-rank${i < 3 ? ' top3' : ''}">${i + 1}</span>
+          <img class="top-poster" src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
+          <div class="top-info">
+            <div class="top-title">${n.title}</div>
+            <div class="top-meta" style="color:${t.color}">${t.name} · ${EVENT_NAME[n.event]}</div>
+          </div>
+        </div>`;
+    }).join('');
+    document.querySelectorAll('.top-item').forEach(el => {
+      el.addEventListener('click', () => goView('timeline', el.dataset.type));
     });
-  });
-
-  // ============ 时间范围筛选 ============
-  document.querySelectorAll('.chip[data-range]').forEach(chip => {
-    chip.addEventListener('click', () => {
-      document.querySelectorAll('.chip[data-range]').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-      currentRange = chip.dataset.range;
-      render();
-    });
-  });
-
-  // ============ 搜索 ============
-  document.getElementById('searchInput').addEventListener('input', (e) => {
-    keyword = e.target.value.trim();
-    render();
-  });
-
-  // ============ 滚动淡入 ============
-  let observer;
-  function observeItems() {
-    if (observer) observer.disconnect();
-    observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-          observer.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
-    document.querySelectorAll('.tl-item').forEach(item => observer.observe(item));
   }
+
+  // ============ 首页：分品类上新卡片组 ============
+  function renderCatGroups() {
+    const order = ['drama', 'movie', 'show', 'anime', 'duan', 'doc'];
+    document.getElementById('catGroups').innerHTML = order.map(type => {
+      const t = TYPE_MAP[type];
+      const items = NEWS.filter(n => n.type === type)
+        .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
+      if (!items.length) return '';
+      return `
+        <section class="block cat-group">
+          <div class="cat-head">
+            <h2 class="block-title" style="color:${t.color}">${t.name}上新</h2>
+            <a class="more-link" data-type="${type}">查看更多 →</a>
+          </div>
+          <div class="cat-row">
+            ${items.map(n => `
+              <div class="cat-card" data-type="${type}">
+                <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
+                <div class="cat-card-title">${n.title}</div>
+              </div>`).join('')}
+          </div>
+        </section>`;
+    }).join('');
+    document.querySelectorAll('.more-link, .cat-card').forEach(el => {
+      el.addEventListener('click', () => goView('timeline', el.dataset.type));
+    });
+  }
+
+  // ============ 首页边栏：票房榜 + 大盘 + 资讯 ============
+  function renderSidebar() {
+    const movies = NEWS.filter(n => n.type === 'movie' && n.event === 'online')
+      .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+    let sum = 0;
+    document.getElementById('boxOffice').innerHTML = movies.map((n, i) => {
+      const box = pseudoBox(n.title, i + 1);
+      sum += box;
+      const name = n.title.replace(/《(.+?)》.*/, '$1');
+      return `
+        <div class="bo-item">
+          <span class="bo-rank${i < 3 ? ' top3' : ''}">${i + 1}</span>
+          <span class="bo-name">${name}</span>
+          <span class="bo-num">${box}万</span>
+        </div>`;
+    }).join('') || '<div class="empty-tip">暂无数据</div>';
+
+    document.getElementById('marketNum').textContent = (sum * 2.6 / 10000).toFixed(2) + ' 亿';
+    const now = new Date();
+    document.getElementById('marketMeta').textContent =
+      `更新于 ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')} · 数据来源：灯塔/猫眼`;
+
+    document.getElementById('flashList').innerHTML = NEWS_FLASH.map(f => `
+      <a class="flash-item" href="${f.url}" target="_blank" rel="noopener">
+        <span class="flash-title">${f.title}</span>
+        <span class="flash-time">${f.time}</span>
+      </a>`).join('');
+  }
+
+  document.getElementById('boxOfficeMore').addEventListener('click', () => goView('timeline', 'movie'));
+  document.getElementById('marketCard').addEventListener('click', () => {
+    window.open('https://piaofang.maoyan.com/dashboard/movie', '_blank');
+  });
 
   // ============ 回到顶部 ============
   const backTop = document.getElementById('backTop');
   window.addEventListener('scroll', () => {
-    if (window.scrollY > 400) backTop.classList.add('show');
-    else backTop.classList.remove('show');
+    backTop.classList.toggle('show', window.scrollY > 400);
   });
-  backTop.addEventListener('click', () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
+  backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
   // ============ 加载数据并启动 ============
   fetch('data.json')
     .then(r => r.json())
     .then(data => {
-      ({ NEWS, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TYPE_SIDEBAR_BG, TIMES, WEEKDAYS } = data);
+      ({ NEWS, NEWS_FLASH, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS } = data);
       // 尝试加载 TMDB 真实数据（带版本参数防浏览器缓存旧版），失败时保留本地模拟数据
-      return fetch('/api/tmdb?v=4')
+      return fetch('/api/tmdb?v=6')
         .then(r => r.json())
         .then(t => {
-          if (t && t.code === 0 && t.data && t.data.length) NEWS = t.data;
+          if (t && t.code === 0 && t.data && t.data.length) {
+            // TMDB 无短剧品类，本地短剧数据始终合并补充
+            NEWS = t.data.concat(data.NEWS.filter(n => n.type === 'duan'));
+          }
         })
         .catch(() => {});
     })
     .then(() => {
       initBanner();
-      render();
+      renderTop10();
+      renderCatGroups();
+      renderSidebar();
+      renderTimeline(document.getElementById('homeTimeline'), { type: 'all', range: 'all', limit: 12 });
     });
 </script>
 </body>
