@@ -36,21 +36,18 @@ function hasChinese(text) {
   return /[\u4e00-\u9fff]/.test(text || '');
 }
 
-// 将英文简介转为中文占位一句话
+// 简介：中文直接截断，英文截断为一句返回（不生成占位文案）
 function zhSummary(overview, fallbackTitle = '') {
-  if (!overview) return '精彩内容，敬请期待。';
-  if (hasChinese(overview)) return cut(overview, 80);
-  // 英文简介 → 生成中文占位描述
-  const cleanTitle = (fallbackTitle || '这部作品').replace(/^《|》$/g, '');
-  const t = cleanTitle || '这部作品';
-  const lang = /[\u4e00-\u9fff]/.test(t) ? '' : '海外';
-  // 根据标题类型生成不同模板
-  if (t.includes('纪录片')) return `${lang}纪录片《${t}》，用镜头记录真实故事。`;
-  if (t.includes('综艺') || t.includes('真人秀')) return `${lang}综艺节目《${t}》，精彩内容不容错过。`;
-  if (t.includes('动画') || t.includes('动漫')) return `${lang}动画作品《${t}》，讲述一段奇幻冒险。`;
-  if (t.includes('电影')) return `${lang}电影《${t}》，精彩故事引人入胜。`;
-  if (t.includes('剧')) return `${lang}剧集《${t}》，演绎精彩故事。`;
-  return `${lang}影视作品《${t}》，讲述一段精彩故事。`;
+  if (!overview) return '';
+  // 英文简介 → 直接截断为一句
+  if (!hasChinese(overview)) {
+    const s = overview.replace(/\s+/g, ' ').trim();
+    const firstSentence = s.split(/[.!?]/)[0];
+    if (firstSentence && firstSentence.length > 10) return firstSentence.trim() + '.';
+    return s.length > 80 ? s.slice(0, 80) + '…' : s;
+  }
+  // 中文简介 → 截断
+  return cut(overview, 80);
 }
 
 function fmtDate(dateStr) {
@@ -78,7 +75,7 @@ function mapShow(s, genreNames) {
     sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
     poster: s.poster_path ? IMG + s.poster_path : '',
     detail: {
-      intro: s.overview || '暂无中文简介。',
+      intro: s.overview || '',
       cast: genres || '暂无',
       platform: `TMDB 评分：${s.vote_average.toFixed(1)}（${s.vote_count} 人评价）`,
       ep: (s.origin_country || []).includes('CN') ? '华语内容' : '海外内容'
@@ -134,7 +131,7 @@ export async function onRequestGet(context) {
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: m.poster_path ? IMG + m.poster_path : '',
         detail: {
-          intro: m.overview || '暂无中文简介。',
+          intro: m.overview || '',
           cast: genres || '暂无',
           platform: `TMDB 评分：${m.vote_average.toFixed(1)}（${m.vote_count} 人评价）`,
           ep: m.original_language === 'zh' ? '华语影片' : '外语影片'
@@ -164,7 +161,7 @@ export async function onRequestGet(context) {
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: m.poster_path ? IMG + m.poster_path : '',
         detail: {
-          intro: m.overview || '暂无中文简介。',
+          intro: m.overview || '',
           cast: genres || '暂无',
           platform: `TMDB 评分：${m.vote_average.toFixed(1)}（${m.vote_count} 人评价）`,
           ep: m.original_language === 'zh' ? '华语影片' : '外语影片'
@@ -198,7 +195,7 @@ export async function onRequestGet(context) {
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: m.poster_path ? IMG + m.poster_path : '',
         detail: {
-          intro: m.overview || '暂无中文简介。',
+          intro: m.overview || '',
           cast: genres || '纪录',
           platform: `TMDB 评分：${m.vote_average.toFixed(1)}（${m.vote_count} 人评价）`,
           ep: m.original_language === 'zh' ? '华语纪录片' : '海外纪录片'
@@ -221,7 +218,7 @@ export async function onRequestGet(context) {
         sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
         poster: s.poster_path ? IMG + s.poster_path : '',
         detail: {
-          intro: s.overview || '暂无中文简介。',
+          intro: s.overview || '',
           cast: genres || '纪录',
           platform: `TMDB 评分：${s.vote_average.toFixed(1)}（${s.vote_count} 人评价）`,
           ep: (s.origin_country || []).includes('CN') ? '华语纪录片' : '海外纪录片'
