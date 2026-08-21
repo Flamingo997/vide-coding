@@ -208,10 +208,12 @@ export async function onRequestGet(context) {
       });
     });
 
-    // 过滤：①必须有 date；②除短剧（走另一接口）外必须带 poster
+    // 过滤：①必须有 date；②除短剧（走另一接口）外必须带 poster；③过滤海报不雅观的条目
+    const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', '100 Boyfriends & Me'];
     let list = items
       .filter(n => n.date)
       .filter(n => n.poster)
+      .filter(n => !BLOCK_TITLES.some(bt => n.title.includes(bt)))
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // 各品类数量统计（便于调用方了解覆盖情况）
