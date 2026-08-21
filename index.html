@@ -363,7 +363,7 @@
             <div class="tl-item" style="--tc:${t.color}">
               <div class="${nodeCls}"></div>
               <article class="card" onclick="toggleCard(this)">
-                <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy"></div>
+                <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy" onerror="this.style.visibility='hidden'"></div>
                 <div class="card-main">
                   <div class="card-top">
                     <span class="card-time">${time} · ${EVENT_NAME[n.event]}</span>
@@ -411,7 +411,7 @@
             ${items.map(n => `
               <div class="cat-card" data-type="${type}">
                 <div class="cat-poster-wrap">
-                  <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
+                  <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy" onerror="this.style.visibility='hidden'">
                   <span class="cat-badge" style="background:${t.color}">${EVENT_NAME[n.event]}</span>
                 </div>
                 <div class="cat-card-info">
@@ -506,17 +506,20 @@
     .then(r => r.json())
     .then(data => {
       ({ NEWS, NEWS_FLASH, POSTER_MAP, WIDE_POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS } = data);
-      // 豆瓣为主：本站手填的 data.json 已有真实数据时优先展示；
-      // 仅当 data.json 为空时，才回退到 /api/tmdb 兜底。
-      if (data.NEWS && data.NEWS.length) return Promise.resolve();
-      return fetch('/api/tmdb?v=7')
-        .then(r => r.json())
-        .then(t => {
-          if (t && t.code === 0 && t.data && t.data.length) {
-            NEWS = t.data.concat(data.NEWS.filter(n => n.type === 'duan'));
-          }
-        })
-        .catch(() => {});
+      // 合并 TMDB（电影/剧/综艺/动漫/纪录片）与 kuleu（短剧）两类实时数据；
+      // data.json 内的静态条目仅作首页兜底展示。
+      const tmbdQ = fetch('/api/tmdb?v=9').then(r => r.json()).catch(() => null);
+      const duanQ = fetch('/api/shortdrama?limit=12').then(r => r.json()).catch(() => null);
+      return Promise.all([tmbdQ, duanQ]).then(([tmbd, duan]) => {
+        const merged = (data.NEWS || []).slice();
+        if (tmbd && tmbd.code === 0 && tmbd.data && tmbd.data.length) {
+          merged.push(...tmbd.data);
+        }
+        if (duan && duan.code === 0 && duan.data && duan.data.length) {
+          merged.push(...duan.data);
+        }
+        NEWS = merged;
+      });
     })
     .then(() => {
       initBanner();

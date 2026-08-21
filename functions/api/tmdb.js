@@ -6,9 +6,6 @@
 const BASE = 'https://api.themoviedb.org/3';
 const IMG = 'https://image.tmdb.org/t/p/w342';
 
-// 引入豆瓣客户端（本文件与 douban.js 同目录）
-import { searchMovie as dbSearch, fetchDetail as dbDetail } from './douban.js';
-
 // TMDB 类型 ID → 本站品类
 const TV_GENRE_TYPE = {
   16: 'anime',    // 动画
@@ -65,65 +62,6 @@ function mapShow(s, genreNames) {
       ep: (s.origin_country || []).includes('CN') ? '华语内容' : '海外内容'
     }
   };
-}
-
-// ===== 豆瓣详情增强：用中文详情覆盖 TMDB，失败回退原数据 =====
-// 复用 douban.js 的查询客户端，cookie 读自环境变量 DOUBAN_COOKIE
-
-async function enrichWithDouban(items, cookie, maxItems) {
-  if (!items.length) return items;
-  // 仅对前 maxItems 部影片做增强，避免请求过多触发豆瓣反爬
-  const targets = items.slice(0, maxItems).filter(n => n.poster || n.type);
-
-  // 限并发数为 2，逐批处理
-  const results = new Array(items.length);
-  let idx = 0;
-  async function worker() {
-    while (idx < items.length) {
-      const i = idx++;
-      const item = items[i];
-      if (!targets.includes(item)) { results[i] = item; continue; }
-      try {
-        // 尝试按 TMDB 标题在豆瓣搜索
-        const name = item.title.replace(/[《》]/g, '');
-        let found = await dbSearch(name, cookie);
-        if (!found || !found.length) { results[i] = item; continue; }
-        let detail = await dbDetail(found[0].id, cookie);
-        if (!detail && found[1]) detail = await dbDetail(found[1].id, cookie);
-        results[i] = applyDouban(item, detail);
-      } catch (e) {
-        results[i] = item; // 豆瓣失败回退原数据
-      }
-    }
-  }
-  await Promise.all([worker(), worker()]);
-  return results;
-}
-
-// 借助豆瓣返回的详情覆盖现有条目
-function applyDouban(item, d) {
-  if (!d) return item;
-  const out = { ...item };
-  if (d.vod_name) out.title = out.title.includes('上映') || out.title.includes('热播') || out.title.includes('热映') ? `《${d.vod_name}》${out.title.split('》')[1] || '热映中'}` : `《${d.vod_name}》`;
-  if (d.vod_pic) out.poster = d.vod_pic;
-  if (d.vod_score) {
-    out.detail = out.detail || {};
-    out.detail.platform = `豆瓣评分：${d.vod_score}`;
-  }
-  if (d.vod_content) {
-    out.detail = out.detail || {};
-    out.detail.intro = d.vod_content;
-  }
-  if (d.vod_area) {
-    out.detail = out.detail || {};
-    out.detail.ep = d.vod_area + (out.detail.ep && out.detail.ep.includes('海外') === false ? '' : '');
-  }
-  if (d.vod_director || d.vod_actor) {
-    out.detail = out.detail || {};
-    out.detail.cast = [d.vod_director, d.vod_actor].filter(Boolean).join(' / ') || out.detail.cast;
-  }
-  out.source = 'TMDB+豆瓣';
-  return out;
 }
 
 export async function onRequestGet(context) {
@@ -266,12 +204,6 @@ export async function onRequestGet(context) {
 
     // 过滤无日期条目并按日期倒序
     let list = items.filter(n => n.date).sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    // 豆瓣详情增强：用中文详情覆盖 TMDB（失败回退原数据）
-    const doubanCookie = context.env.DOUBAN_COOKIE || '';
-    if (doubanCookie) {
-      list = await enrichWithDouban(list, doubanCookie, 20);
-    }
 
     // 各品类数量统计（便于调用方了解覆盖情况）
     const coverage = {};
