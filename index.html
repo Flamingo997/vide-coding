@@ -506,6 +506,9 @@
     .then(r => r.json())
     .then(data => {
       ({ NEWS, NEWS_FLASH, POSTER_MAP, WIDE_POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS } = data);
+      // 豆瓣为主：本站手填的 data.json 已有真实数据时优先展示；
+      // 仅当 data.json 为空时，才回退到 /api/tmdb 兜底。
+      if (data.NEWS && data.NEWS.length) return Promise.resolve();
       return fetch('/api/tmdb?v=7')
         .then(r => r.json())
         .then(t => {
