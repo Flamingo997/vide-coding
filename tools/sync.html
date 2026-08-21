@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>影新鲜 · 豆瓣数据录入工具</title>
+<style>
+  :root{
+    --orange:#FF7D00; --grad:linear-gradient(135deg,#FFB347,#FF8C00,#FF5722);
+    --border:#e5e7eb; --bg:#f8f9fb;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:#1a1f2e;}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px;}
+  header{display:flex;align-items:center;gap:14px;border-bottom:2px solid var(--grad);padding-bottom:14px;margin-bottom:22px;}
+  .logo{width:52px;height:52px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:22px;box-shadow:0 4px 14px rgba(255,125,0,.3);}
+  header h1{font-size:22px;margin:0;}
+  header p{margin:2px 0 0;color:#6b7280;font-size:12px;}
+  .btn{border:none;border-radius:10px;padding:10px 18px;font-size:14px;cursor:pointer;font-weight:600;transition:.15s;}
+  .btn-primary{background:var(--grad);color:#fff;box-shadow:0 3px 10px rgba(255,125,0,.25);}
+  .btn-primary:hover{filter:brightness(1.05);transform:translateY(-1px);}
+  .btn-outline{background:#fff;border:1px solid var(--border);color:#374151;}
+  .btn-outline:hover{border-color:var(--orange);color:var(--orange);}
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:20px;}
+  .hint{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:12px 16px;font-size:13px;line-height:1.7;margin-bottom:20px;}
+  .hint b{color:#c2410c;}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top;text-align:left;}
+  th{background:#f3f4f6;font-weight:700;color:#374151;white-space:nowrap;}
+  input[type=text],textarea{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:7px 10px;font-size:13px;font-family:inherit;resize:vertical;}
+  input:focus,textarea:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(255,125,0,.12);}
+  .num{width:70px;}
+  .row-actions{display:flex;gap:6px;}
+  .icon-btn{border:none;background:none;cursor:pointer;font-size:16px;padding:4px 6px;border-radius:6px;}
+  .icon-btn:hover{background:#f3f4f6;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+  .badge.orange{background:#fff3e6;color:var(--orange);}
+  a.catD{color:var(--orange);font-weight:700;}
+  .footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--border);padding:12px 20px;display:flex;justify-content:center;gap:16px;box-shadow:0 -2px 10px rgba(0,0,0,.05);}
+  .empty{text-align:center;color:#9ca3af;padding:40px;font-size:14px;}
+  #status{font-size:13px;color:#6b7280;}
+  details{margin:16px 0;}
+  summary{font-weight:700;color:#374151;cursor:pointer;}
+  .export-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">影</div>
+    <div>
+      <h1>豆瓣数据录入工具</h1>
+      <p>手动录入豆瓣评分/导演/演员/剧情 → 合入 data.json → 导出替换站点数据</p>
+    </div>
+  </header>
+
+  <div class="hint">
+    <b>使用说明：</b>由于 Cloudflare 服务器无法访问豆瓣，采用纯手动录入方式。
+    ① 在豆瓣网页搜索影片，<b>右键</b>把详情（评分、导演、演员、剧情简介、海报图地址）复制/照抄填入下表；
+    ② 填完一行点击对应 <b>💾 保存</b>；
+    ③ 全部完成后点下方 <b>⬇️ 导出 data.json</b> 下载，用下载的文件替换站点根目录的 data.json；
+    ④ 执行 git commit + push 即可上线。海报图地址可用豆瓣 http://img3.doubanio.com 开头、或任何可公开访问的图床 URL。
+  </div>
+
+  <div class="toolbar">
+    <button class="btn btn-outline" id="addRow">➕ 新增一条影片</button>
+    <button class="btn btn-outline" id="loadData">📂 加载现有 data.json</button>
+    <span id="status"></span>
+  </div>
+
+  <div id="exportArea" style="display:none;">
+    <details>
+      <summary>⬇️ 预览 / 下载导出的 data.json</summary>
+      <div class="export-box">
+        <button class="btn btn-primary" id="download">下载 data.json</button>
+        <textarea id="jsonOut" rows="12" style="margin-top:12px;"></textarea>
+      </div>
+    </details>
+  </div>
+
+  <div id="listArea">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th style="width:30px">#</th>
+          <th>片名<span class="badge orange">必填</span></th>
+          <th>分类</th>
+          <th>上映日期(YYYY-MM-DD)</th>
+          <th>状态</th>
+          <th>豆瓣评分</th>
+          <th>导演 / 演员</th>
+          <th>海报图地址</th>
+          <th>一句话简介 / 剧情</th>
+          <th style="width:60px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="emptyTip">暂无数据，点击上方「➕ 新增一条影片」开始录入</div>
+  </div>
+</div>
+
+<div class="footer">
+  <button class="btn btn-outline" id="addRow2">➕ 新增</button>
+  <button class="btn btn-primary" id="download2">⬇️ 导出 data.json</button>
+</div>
+
+<script>
+const CATS = { movie:'院线电影', drama:'电视剧', show:'综艺', anime:'动漫', duan:'短剧', doc:'纪录片' };
+const TYPES = { movie:'movie', drama:'drama', show:'show', anime:'anime', duan:'duan', doc:'doc' };
+
+// 初始化默认几条示例（空模板，便于识别字段）
+const IDO = () => ({
+  date:'', type:'movie', event:'online', status:'done',
+  title:'', summary:'', source:'豆瓣', sourceLink:'',
+  poster:'', detail:{ intro:'', cast:'', platform:'', ep:'华语影片' }
+});
+
+let rows = [];
+
+
+function render() {
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = '';
+  document.getElementById('emptyTip').style.display = rows.length ? 'none' : 'block';
+  document.getElementById('exportArea').style.display = rows.length ? 'block' : 'none';
+
+  rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    const d = r.detail || {};
+    tr.innerHTML = `
+      <td class="idx">${i+1}</td>
+      <td><input type="text" class="f-title" value="${esc(r.title||'')}" placeholder="片名（含《》）"></td>
+      <td>
+        <select class="f-type">
+          ${Object.entries(CATS).map(([k,v])=>`<option value="${k}" ${r.type===k?'selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="text" class="f-date" value="${esc(r.date||'')}" placeholder="2026-08-20"></td>
+      <td>
+        <select class="f-event">
+          <option value="online" ${(r.event||'')==='online'?'selected':''}>上线/上映</option>
+          <option value="schedule" ${(r.event||'')==='schedule'?'selected':''}>定档</option>
+        </select>
+      </td>
+      <td><input type="text" class="f-score num" value="${esc((d.platform||'').replace('豆瓣评分：',''))}" placeholder="8.5"></td>
+      <td><input type="text" class="f-cast" value="${esc(d.cast||'')}" placeholder="导演 / 演员"></td>
+      <td><input type="text" class="f-poster" value="${esc(r.poster||'')}" placeholder="海报图地址"></td>
+      <td><textarea class="f-intro" rows="2" placeholder="一句话简介或完整剧情">${esc(d.intro||r.summary||'')}</textarea></td>
+      <td class="row-actions">
+        <button class="icon-btn" title="保存" data-save="1">💾</button>
+        <button class="icon-btn" title="删除" data-del="1">🗑️</button>
+      </td>`;
+    tb.appendChild(tr);
+
+    // 事件绑定
+    tr.querySelector('.f-title').addEventListener('input', () => rows[i].title = tr.querySelector('.f-title').value);
+    tr.querySelector('.f-type').addEventListener('change', () => rows[i].type = tr.querySelector('.f-type').value);
+    tr.querySelector('.f-date').addEventListener('input', () => rows[i].date = tr.querySelector('.f-date').value);
+    tr.querySelector('.f-event').addEventListener('change', () => rows[i].event = tr.querySelector('.f-event').value);
+    tr.querySelector('.f-score').addEventListener('input',
+      ()=> rows[i].detail.platform = '豆瓣评分：' + tr.querySelector('.f-score').value);
+    tr.querySelector('.f-cast').addEventListener('input', () => rows[i].detail.cast = tr.querySelector('.f-cast').value);
+    tr.querySelector('.f-poster').addEventListener('input', () => rows[i].poster = tr.querySelector('.f-poster').value);
+    tr.querySelector('.f-intro').addEventListener('input',
+      ()=> { rows[i].detail.intro = tr.querySelector('.f-intro').value; rows[i].summary = tr.querySelector('.f-intro').value.slice(0,80); });
+    tr.querySelector('[data-del]').addEventListener('click', () => { rows.splice(i,1); render(); });
+    tr.querySelector('[data-save]').addEventListener('click', () => flash(`第 ${i+1} 条已保存到内存，请最后导出`));
+  });
+}
+
+function flash(m){
+  const s=document.getElementById('status');
+  s.textContent=m;
+  clearTimeout(s._t);
+  s._t=setTimeout(()=>s.textContent='',1800);
+}
+
+function esc(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function download(){
+  // 生成可用于站点的 data.json（合并进通用店铺字段）
+  const out = {
+    generatedBy: '影新鲜豆瓣录入工具',
+    generatedAt: new Date().toISOString(),
+    NEWS: rows.map(r => {
+      const o = {
+        date:r.date||'', type:r.type||'movie', event:r.event||'online', status:r.status||'done',
+        title:r.title||'', summary:r.summary||'', source:r.source||'豆瓣', sourceLink:r.sourceLink||'',
+        poster:r.poster||''
+      };
+      if(Object.keys(r.detail||{}).length) o.detail=r.detail||{};
+      return o;
+    })
+  };
+  const json = JSON.stringify(out, null, 2);
+  document.getElementById('jsonOut').value = json;
+  const blob = new Blob([json], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'data.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  flash('已导出 data.json 并下载');
+}
+
+// ---- 事件绑定 ----
+document.getElementById('addRow').addEventListener('click', ()=>{ rows.push(IDO()); render(); });
+document.getElementById('addRow2').addEventListener('click', ()=>{ rows.push(IDO()); render(); });
+document.getElementById('download').addEventListener('click', download);
+document.getElementById('download2').addEventListener('click', download);
+
+document.getElementById('loadData').addEventListener('click', ()=>{
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept='.json';
+  inp.onchange = e => {
+    const f = e.target.files[0];
+    if(!f) return;
+    f.text().then(txt=>{
+      try{
+        const data = JSON.parse(txt);
+        const arr = Array.isArray(data) ? data : (data.NEWS||[]);
+        if(!arr.length){ flash('文件中没有影片数据'); return; }
+        rows = arr.map(n => ({
+          date:n.date||'', type:n.type||'movie', event:n.event||'online', status:n.status||'done',
+          title:n.title||'', summary:n.summary||'', source:n.source||'', sourceLink:n.sourceLink||'',
+          poster:n.poster||'', detail:n.detail||IDO().detail
+        }));
+        render();
+        flash(`已加载 ${rows.length} 条数据`);
+      }catch(err){ flash('解析 JSON 失败：'+err.message); }
+    });
+  };
+  inp.click();
+});
+
+render();
+</script>
+</body>
+</html>
