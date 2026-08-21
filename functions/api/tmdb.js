@@ -32,6 +32,27 @@ function cut(text, len) {
   return text.length > len ? text.slice(0, len) + '…' : text;
 }
 
+function hasChinese(text) {
+  return /[\u4e00-\u9fff]/.test(text || '');
+}
+
+// 将英文简介转为中文占位一句话
+function zhSummary(overview, fallbackTitle = '') {
+  if (!overview) return '精彩内容，敬请期待。';
+  if (hasChinese(overview)) return cut(overview, 80);
+  // 英文简介 → 生成中文占位描述
+  const cleanTitle = (fallbackTitle || '这部作品').replace(/^《|》$/g, '');
+  const t = cleanTitle || '这部作品';
+  const lang = /[\u4e00-\u9fff]/.test(t) ? '' : '海外';
+  // 根据标题类型生成不同模板
+  if (t.includes('纪录片')) return `${lang}纪录片《${t}》，用镜头记录真实故事。`;
+  if (t.includes('综艺') || t.includes('真人秀')) return `${lang}综艺节目《${t}》，精彩内容不容错过。`;
+  if (t.includes('动画') || t.includes('动漫')) return `${lang}动画作品《${t}》，讲述一段奇幻冒险。`;
+  if (t.includes('电影')) return `${lang}电影《${t}》，精彩故事引人入胜。`;
+  if (t.includes('剧')) return `${lang}剧集《${t}》，演绎精彩故事。`;
+  return `${lang}影视作品《${t}》，讲述一段精彩故事。`;
+}
+
 function fmtDate(dateStr) {
   const d = new Date(dateStr);
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
@@ -52,7 +73,7 @@ function mapShow(s, genreNames) {
     event: 'online',
     status: 'done',
     title: `《${s.name}》热播中`,
-    summary: cut(s.overview, 80),
+    summary: zhSummary(s.overview, s.name),
     source: 'TMDB',
     sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
     poster: s.poster_path ? IMG + s.poster_path : '',
@@ -108,7 +129,7 @@ export async function onRequestGet(context) {
         event: 'online',
         status: 'done',
         title: `《${m.title}》正在热映`,
-        summary: cut(m.overview, 80),
+        summary: zhSummary(m.overview, m.title),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: m.poster_path ? IMG + m.poster_path : '',
@@ -138,7 +159,7 @@ export async function onRequestGet(context) {
         event: isPast ? 'online' : 'schedule',
         status: isPast ? 'done' : 'pending',
         title: isPast ? `《${m.title}》正在热映` : `《${m.title}》定档${fmtDate(m.release_date)}`,
-        summary: cut(m.overview, 80),
+        summary: zhSummary(m.overview, m.title),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: m.poster_path ? IMG + m.poster_path : '',
@@ -172,7 +193,7 @@ export async function onRequestGet(context) {
         event: 'online',
         status: 'done',
         title: `《${m.title}》纪录电影热映`,
-        summary: cut(m.overview, 80),
+        summary: zhSummary(m.overview, m.title),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: m.poster_path ? IMG + m.poster_path : '',
@@ -195,7 +216,7 @@ export async function onRequestGet(context) {
         event: 'online',
         status: 'done',
         title: `《${s.name}》纪录片热播中`,
-        summary: cut(s.overview, 80),
+        summary: zhSummary(s.overview, s.name),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
         poster: s.poster_path ? IMG + s.poster_path : '',
@@ -209,11 +230,12 @@ export async function onRequestGet(context) {
     });
 
     // 过滤：①必须有 date；②除短剧（走另一接口）外必须带 poster；③过滤海报不雅观的条目
-    const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', '100 Boyfriends & Me'];
+    const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', '100 Boyfriends & Me', 'Bonnie Blue'];
     let list = items
       .filter(n => n.date)
       .filter(n => n.poster)
       .filter(n => !BLOCK_TITLES.some(bt => n.title.includes(bt)))
+      .filter(n => !BLOCK_TITLES.some(bt => (n.summary || '').includes(bt)))
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // 各品类数量统计（便于调用方了解覆盖情况）

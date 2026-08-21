@@ -251,8 +251,14 @@
       .map(n => {
         const poster = n.poster || POSTER_MAP[n.title];
         const wide = n.widePoster || WIDE_POSTER_MAP[n.title] || null;
+        // 去掉定档日期，只保留影片名
+        const cleanTitle = n.title
+          .replace(/定档\d{4}年\d+月\d+日/, '')
+          .replace(/定档\d+月\d+日/, '')
+          .replace(/\s+/g, ' ')
+          .trim();
         return {
-          title: n.title,
+          title: cleanTitle,
           poster,
           wide,
           type: n.type,

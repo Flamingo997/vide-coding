@@ -399,8 +399,8 @@ body {
 
 .cat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
 }
 .cat-card { cursor: pointer; }
 .cat-poster-wrap {
@@ -409,8 +409,9 @@ body {
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(26, 31, 46, 0.1);
   transition: all 0.3s ease;
-  aspect-ratio: 16/9;
+  aspect-ratio: 2/3;
   background: var(--gray-6);
+  width: 100%;
 }
 .cat-poster-wrap:hover {
   transform: translateY(-3px);
