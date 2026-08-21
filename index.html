@@ -11,22 +11,53 @@
 <!-- 顶部通栏导航（吸顶） -->
 <header class="topnav">
   <div class="brand" data-view="home">
-    <span class="brand-name">影新鲜</span>
-    <span class="brand-slogan">每日上新 · 定档速览</span>
+    <svg class="logo" width="52" height="52" viewBox="0 0 64 64" fill="none">
+      <defs>
+        <linearGradient id="orangeGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#FFB347"/>
+          <stop offset="40%" stop-color="#FF8C00"/>
+          <stop offset="100%" stop-color="#FF5722"/>
+        </linearGradient>
+        <linearGradient id="orangeHighlight" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fff" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <!-- 橙子主体 -->
+      <circle cx="32" cy="36" r="22" fill="url(#orangeGrad)"/>
+      <!-- 橙子高光 -->
+      <ellipse cx="25" cy="28" rx="8" ry="6" fill="url(#orangeHighlight)"/>
+      <!-- 橙子纹理点 -->
+      <circle cx="22" cy="32" r="1" fill="#fff" opacity="0.3"/>
+      <circle cx="40" cy="30" r="1.2" fill="#fff" opacity="0.3"/>
+      <circle cx="28" cy="42" r="0.8" fill="#fff" opacity="0.3"/>
+      <circle cx="38" cy="44" r="1" fill="#fff" opacity="0.25"/>
+      <circle cx="44" cy="38" r="0.9" fill="#fff" opacity="0.25"/>
+      <!-- 橙子叶子 -->
+      <path d="M32 14 Q28 8 34 6 Q38 10 32 14" fill="#4CAF50"/>
+      <path d="M32 14 Q36 8 30 6 Q26 10 32 14" fill="#66BB6A"/>
+      <!-- 播放按钮 蓝色圆形 -->
+      <circle cx="46" cy="20" r="11" fill="#2F86FF"/>
+      <polygon points="43,14 43,26 53,20" fill="#fff"/>
+      <circle cx="46" cy="20" r="13" fill="none" stroke="#2F86FF" stroke-width="1.5" opacity="0.25"/>
+    </svg>
+    <div class="brand-text">
+      <span class="brand-name">影新鲜</span>
+      <span class="brand-slogan">每日上新 · 定档速览</span>
+    </div>
   </div>
   <nav class="nav" id="nav">
     <a class="nav-item active" data-view="home">首页</a>
-    <a class="nav-item" data-view="timeline" data-type="all">全量时间线</a>
-    <a class="nav-item" data-view="timeline" data-type="movie">电影</a>
-    <a class="nav-item" data-view="timeline" data-type="drama">电视剧</a>
-    <a class="nav-item" data-view="timeline" data-type="show">综艺</a>
-    <a class="nav-item" data-view="timeline" data-type="anime">动漫</a>
-    <a class="nav-item optional" data-view="timeline" data-type="doc">纪录片</a>
-    <a class="nav-item optional" data-view="timeline" data-type="duan">短剧</a>
+    <a class="nav-item" data-view="timeline" data-type="movie"><span class="nav-dot" style="background:#FF7D00"></span>电影</a>
+    <a class="nav-item" data-view="timeline" data-type="drama"><span class="nav-dot" style="background:#2F86FF"></span>电视剧</a>
+    <a class="nav-item" data-view="timeline" data-type="show"><span class="nav-dot" style="background:#F54A8B"></span>综艺</a>
+    <a class="nav-item" data-view="timeline" data-type="anime"><span class="nav-dot" style="background:#FFB800"></span>动漫</a>
+    <a class="nav-item optional" data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
+    <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
-        <a data-view="timeline" data-type="doc">纪录片</a>
-        <a data-view="timeline" data-type="duan">短剧</a>
+        <a data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
+        <a data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
       </span>
     </span>
   </nav>
@@ -43,47 +74,69 @@
       <!-- 轮播 Banner -->
       <section class="banner" id="banner">
         <div class="slides" id="slides"></div>
-        <button class="banner-btn prev" id="prevBtn" aria-label="上一张">‹</button>
-        <button class="banner-btn next" id="nextBtn" aria-label="下一张">›</button>
-        <div class="dots" id="dots"></div>
-      </section>
-
-      <!-- 本周上新 TOP 榜 -->
-      <section class="block">
-        <h2 class="block-title">本周上新 TOP 榜</h2>
-        <div class="top10" id="top10"></div>
+        <div class="banner-bottom">
+          <div class="banner-title-wrap" id="bannerTitle"></div>
+          <div class="banner-controls">
+            <div class="dots" id="dots"></div>
+            <div class="banner-btns">
+              <button class="banner-btn" id="prevBtn" aria-label="上一张">‹</button>
+              <button class="banner-btn" id="nextBtn" aria-label="下一张">›</button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- 分品类上新卡片组 -->
       <div id="catGroups"></div>
 
-      <!-- 综合定档快讯时间线 -->
-      <section class="block">
-        <h2 class="block-title">综合定档快讯</h2>
-        <div class="timeline" id="homeTimeline"></div>
-      </section>
     </div>
 
     <!-- 右侧边栏 -->
     <aside class="home-side">
-      <div class="side-card" id="boxOfficeCard">
-        <h3 class="side-title">今日票房</h3>
+      <div class="side-card box-office-card" id="boxOfficeCard">
+        <h3 class="side-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:6px">
+            <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3Z" stroke="#FF7D00" stroke-width="2"/>
+            <path d="M9 17V7L17 12L9 17Z" fill="#FF7D00"/>
+          </svg>
+          今日票房
+        </h3>
         <div id="boxOffice"></div>
         <a class="side-link" id="boxOfficeMore">查看更多电影资讯 →</a>
       </div>
 
       <div class="side-card market-card" id="marketCard" title="点击查看猫眼专业版票房大盘">
-        <div class="market-label">今日大盘（总票房）</div>
+        <div class="market-chart">
+          <svg width="60" height="40" viewBox="0 0 60 40" style="opacity:0.5">
+            <polyline points="0,35 10,28 20,30 30,20 40,22 50,12 60,8" stroke="#FF7D00" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <polyline points="0,35 10,28 20,30 30,20 40,22 50,12 60,8 60,40 0,40" fill="url(#marketGrad)"/>
+            <defs><linearGradient id="marketGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FF7D00" stop-opacity="0.3"/><stop offset="100%" stop-color="#FF7D00" stop-opacity="0"/></linearGradient></defs>
+          </svg>
+        </div>
+        <div class="market-label-wrap">
+          <svg class="market-icon" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="12" width="4" height="8" rx="1" fill="#FFB347"/>
+            <rect x="10" y="8" width="4" height="12" rx="1" fill="#FF8C00"/>
+            <rect x="17" y="4" width="4" height="16" rx="1" fill="#FF5722"/>
+          </svg>
+          <span class="market-label">今日大盘</span>
+        </div>
         <div class="market-num" id="marketNum">--</div>
         <div class="market-meta" id="marketMeta">数据更新中…</div>
         <div class="market-go">猫眼专业版 ↗</div>
       </div>
 
-      <div class="side-card">
-        <h3 class="side-title">影视资讯</h3>
+      <div class="side-card news-side-card">
+        <h3 class="side-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:6px">
+            <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3Z" stroke="#FF7D00" stroke-width="2"/>
+            <path d="M7 7H17V9H7V7ZM7 11H17V13H7V11ZM7 15H13V17H7V15Z" fill="#FF7D00"/>
+          </svg>
+          影视资讯
+        </h3>
         <div id="flashList"></div>
-        <div class="flash-src">资讯来源：环球网</div>
       </div>
+      <div class="side-spacer" id="sideSpacer"></div>
     </aside>
   </div>
 </main>
@@ -106,17 +159,15 @@
 <footer class="footer">
   <p>本页面影视资讯来自 TMDB（themoviedb.org），API 异常时显示本地模拟数据，仅供演示，不作为实际观影决策依据。</p>
   <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
-  <p class="version">Version 0.4</p>
+  <p class="version">Version 0.5</p>
 </footer>
 
 <button class="back-top" id="backTop" aria-label="回到顶部">↑</button>
 
 <script>
-  // 数据来自 data.json，加载完成后启动
-  let NEWS, NEWS_FLASH, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS;
+  let NEWS, NEWS_FLASH, POSTER_MAP, WIDE_POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS;
 
-  // ============ 状态 ============
-  let currentView = 'home';   // home | timeline
+  let currentView = 'home';
   let currentType = 'all';
   let currentRange = 'all';
   let keyword = '';
@@ -137,21 +188,24 @@
     return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + WEEKDAYS[d.getDay()];
   }
 
-  // 生成稳定的模拟票房（万）：同一影片每次结果一致
   function pseudoBox(title, seed) {
     let h = seed * 7919;
     for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) % 100000;
     return 300 + (h % 4700);
   }
 
-  // ============ 视图切换 ============
   function goView(view, type) {
     currentView = view;
     currentType = type || 'all';
     document.getElementById('homeView').hidden = view !== 'home';
     document.getElementById('tlView').hidden = view !== 'timeline';
 
-    // 导航选中态 + 主题色
+    // 视图切换过渡动画（淡入 + 上移）
+    const showEl = view === 'home' ? document.getElementById('homeView') : document.getElementById('tlView');
+    showEl.classList.remove('view-enter');
+    void showEl.offsetWidth; // 强制重排以重启动画
+    showEl.classList.add('view-enter');
+
     const themeColor = view === 'timeline' && currentType !== 'all'
       ? TYPE_MAP[currentType].color : '#2F86FF';
     document.documentElement.style.setProperty('--theme', themeColor);
@@ -167,14 +221,13 @@
         currentType === 'all' ? '全量时间线' : TYPE_MAP[currentType].name;
       renderTimeline(document.getElementById('timeline'), { type: currentType, range: currentRange, keyword });
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }
 
   document.querySelectorAll('.nav-item, .more-menu a, .brand').forEach(el => {
     el.addEventListener('click', () => goView(el.dataset.view, el.dataset.type));
   });
 
-  // ============ 时间范围筛选 ============
   document.querySelectorAll('#rangeRow .pill').forEach(p => {
     p.addEventListener('click', () => {
       document.querySelectorAll('#rangeRow .pill').forEach(x => x.classList.remove('active'));
@@ -184,7 +237,6 @@
     });
   });
 
-  // ============ 搜索 ============
   document.getElementById('searchInput').addEventListener('input', e => {
     keyword = e.target.value.trim();
     if (keyword && currentView === 'home') { goView('timeline', 'all'); return; }
@@ -193,40 +245,77 @@
     }
   });
 
-  // ============ 轮播 Banner（数据独立，不依赖 NEWS） ============
+  // ============ 轮播 Banner ============
   function initBanner() {
-    const BANNER_ITEMS = [
-      { title: '《深海回响》全国院线上映', wide: 'posters/02_shen_hai_wide.jpg', type: 'movie',
-        summary: '科幻惊悚电影《深海回响》登陆全国院线，深海科考队遭遇未知生物的惊险故事。' },
-      { title: '《长安霓裳录》全网首播', wide: 'posters/01_chang_an_wide.jpg', type: 'drama',
-        summary: '古装悬疑剧《长安霓裳录》全网首播，讲述盛唐长安城中一桩牵动朝野的霓裳羽衣案。' },
-      { title: '《星海战记》提档首播', wide: 'posters/08_xing_hai_wide.jpg', type: 'anime',
-        summary: '星际舰队远征深空，年轻舰长带领船员穿越未知星域寻找人类新家园。' }
-    ];
+    const BANNER_ITEMS = NEWS
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 6)
+      .map(n => {
+        const poster = n.poster || POSTER_MAP[n.title];
+        const wide = n.widePoster || WIDE_POSTER_MAP[n.title] || null;
+        return {
+          title: n.title,
+          poster,
+          wide,
+          type: n.type,
+          summary: n.summary,
+          color: TYPE_MAP[n.type].color
+        };
+      });
+
+    if (BANNER_ITEMS.length === 0) return;
+
     const slidesEl = document.getElementById('slides');
     const dotsEl = document.getElementById('dots');
+    const titleEl = document.getElementById('bannerTitle');
     let slideIdx = 0;
     let slideTimer = null;
 
     slidesEl.innerHTML = BANNER_ITEMS.map((n, i) => {
-      const t = TYPE_MAP[n.type];
-      return `
-        <div class="slide${i === 0 ? ' on' : ''}" style="background-image:url('${n.wide}')">
-          <div class="slide-info">
-            <span class="slide-tag" style="background:${t.color}">${t.name}</span>
-            <h2>${n.title}</h2>
-            <p>${n.summary}</p>
-          </div>
-        </div>`;
+      if (n.wide) {
+        return `
+          <div class="slide${i === 0 ? ' on' : ''}" style="background: linear-gradient(135deg, ${n.color}22, #1A1F2E);">
+            <img src="${n.wide}" class="slide-bg" alt="${n.title}">
+            <div class="slide-overlay"></div>
+            <div class="slide-info">
+              <span class="slide-tag" style="background:${n.color}">${TYPE_MAP[n.type].name}</span>
+              <h2>${n.title}</h2>
+              <p>${n.summary}</p>
+            </div>
+          </div>`;
+      } else {
+        return `
+          <div class="slide${i === 0 ? ' on' : ''}" style="background: linear-gradient(135deg, ${n.color}dd 0%, ${n.color}88 40%, #1A1F2E 100%);">
+            <div class="slide-with-poster">
+              <div class="slide-poster-wrap">
+                <img src="${n.poster}" class="slide-poster" alt="${n.title}">
+                <div class="slide-poster-glow" style="box-shadow: 0 0 60px ${n.color}88;"></div>
+              </div>
+              <div class="slide-text-only">
+                <span class="slide-tag" style="background:${n.color}">${TYPE_MAP[n.type].name}</span>
+                <h2>${n.title}</h2>
+                <p>${n.summary}</p>
+              </div>
+            </div>
+          </div>`;
+      }
     }).join('');
+
+    function renderTitle() {
+      const n = BANNER_ITEMS[slideIdx];
+      titleEl.innerHTML = `<span class="banner-current-title">${n.title}</span>`;
+    }
+    renderTitle();
+
     dotsEl.innerHTML = BANNER_ITEMS.map((_, i) => `<span class="${i === 0 ? 'on' : ''}" data-i="${i}"></span>`).join('');
 
     function goSlide(i) {
       slideIdx = (i + BANNER_ITEMS.length) % BANNER_ITEMS.length;
       slidesEl.querySelectorAll('.slide').forEach((s, k) => s.classList.toggle('on', k === slideIdx));
       dotsEl.querySelectorAll('span').forEach((s, k) => s.classList.toggle('on', k === slideIdx));
+      renderTitle();
     }
-    function startAuto() { stopAuto(); slideTimer = setInterval(() => goSlide(slideIdx + 1), 4000); }
+    function startAuto() { stopAuto(); slideTimer = setInterval(() => goSlide(slideIdx + 1), 5000); }
     function stopAuto() { if (slideTimer) clearInterval(slideTimer); }
 
     document.getElementById('prevBtn').addEventListener('click', () => goSlide(slideIdx - 1));
@@ -238,7 +327,6 @@
     startAuto();
   }
 
-  // ============ 时间线渲染（通用，按日期分组） ============
   function renderTimeline(container, opt) {
     const { type = 'all', range = 'all', keyword: kw = '', limit = 0 } = opt;
     let filtered = NEWS.filter(n => {
@@ -269,7 +357,7 @@
           const t = TYPE_MAP[n.type];
           if (!t) return '';
           const time = TIMES[NEWS.indexOf(n) % TIMES.length];
-          const nodeCls = n.status === 'pending' ? 'tl-node pending' : 'tl-node';
+          const nodeCls = 'tl-node';
           return `
             <div class="tl-item" style="--tc:${t.color}">
               <div class="${nodeCls}"></div>
@@ -304,33 +392,9 @@
     card.querySelector('.detail').classList.toggle('open');
   };
 
-  // ============ 首页：本周上新 TOP10 ============
-  function renderTop10() {
-    const items = NEWS
-      .filter(n => { const d = Math.round((new Date(n.date) - TODAY) / 86400000); return d >= -7; })
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .slice(0, 10);
-    document.getElementById('top10').innerHTML = items.map((n, i) => {
-      const t = TYPE_MAP[n.type];
-      if (!t) return '';
-      return `
-        <div class="top-item" data-type="${n.type}">
-          <span class="top-rank${i < 3 ? ' top3' : ''}">${i + 1}</span>
-          <img class="top-poster" src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
-          <div class="top-info">
-            <div class="top-title">${n.title}</div>
-            <div class="top-meta" style="color:${t.color}">${t.name} · ${EVENT_NAME[n.event]}</div>
-          </div>
-        </div>`;
-    }).join('');
-    document.querySelectorAll('.top-item').forEach(el => {
-      el.addEventListener('click', () => goView('timeline', el.dataset.type));
-    });
-  }
-
-  // ============ 首页：分品类上新卡片组 ============
+  // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
   function renderCatGroups() {
-    const order = ['drama', 'movie', 'show', 'anime', 'duan', 'doc'];
+    const order = ['movie', 'drama', 'show', 'anime', 'duan', 'doc'];
     document.getElementById('catGroups').innerHTML = order.map(type => {
       const t = TYPE_MAP[type];
       const items = NEWS.filter(n => n.type === type)
@@ -339,14 +403,20 @@
       return `
         <section class="block cat-group">
           <div class="cat-head">
-            <h2 class="block-title" style="color:${t.color}">${t.name}上新</h2>
+            <h2 class="block-title" style="color:${t.color}">${t.name}</h2>
             <a class="more-link" data-type="${type}">查看更多 →</a>
           </div>
-          <div class="cat-row">
+          <div class="cat-grid">
             ${items.map(n => `
               <div class="cat-card" data-type="${type}">
-                <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
-                <div class="cat-card-title">${n.title}</div>
+                <div class="cat-poster-wrap">
+                  <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
+                  <span class="cat-badge" style="background:${t.color}">${EVENT_NAME[n.event]}</span>
+                </div>
+                <div class="cat-card-info">
+                  <div class="cat-card-title">${n.title}</div>
+                  <div class="cat-card-desc">${n.summary}</div>
+                </div>
               </div>`).join('')}
           </div>
         </section>`;
@@ -356,7 +426,7 @@
     });
   }
 
-  // ============ 首页边栏：票房榜 + 大盘 + 资讯 ============
+  // ============ 首页边栏：票房榜 + 大盘 + 资讯（优化版） ============
   function renderSidebar() {
     const movies = NEWS.filter(n => n.type === 'movie' && n.event === 'online')
       .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
@@ -365,6 +435,20 @@
       const box = pseudoBox(n.title, i + 1);
       sum += box;
       const name = n.title.replace(/《(.+?)》.*/, '$1');
+      const poster = n.poster || POSTER_MAP[n.title];
+      if (i === 0) {
+        return `
+          <div class="bo-item bo-top">
+            <div class="bo-top-poster">
+              <img src="${poster}" alt="${name}">
+              <span class="bo-rank top3 big">1</span>
+            </div>
+            <div class="bo-top-info">
+              <div class="bo-top-name">${name}</div>
+              <div class="bo-top-box">${box}万 <span class="bo-trend">↑ 热映中</span></div>
+            </div>
+          </div>`;
+      }
       return `
         <div class="bo-item">
           <span class="bo-rank${i < 3 ? ' top3' : ''}">${i + 1}</span>
@@ -378,36 +462,53 @@
     document.getElementById('marketMeta').textContent =
       `更新于 ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')} · 数据来源：灯塔/猫眼`;
 
-    document.getElementById('flashList').innerHTML = NEWS_FLASH.map(f => `
-      <a class="flash-item" href="${f.url}" target="_blank" rel="noopener">
-        <span class="flash-title">${f.title}</span>
-        <span class="flash-time">${f.time}</span>
-      </a>`).join('');
+    document.getElementById('flashList').innerHTML = NEWS_FLASH.map((f, i) => `
+      <div class="flash-item">
+        <span class="flash-dot"></span>
+        <span class="flash-content">
+          <span class="flash-title">${f.title}</span>
+          <span class="flash-time">${f.time}</span>
+        </span>
+      </div>`).join('');
+
+    adjustSideSpacer();
   }
+
+  function adjustSideSpacer() {
+    const homeMain = document.querySelector('.home-main');
+    const homeSide = document.querySelector('.home-side');
+    const spacer = document.getElementById('sideSpacer');
+    if (!homeMain || !homeSide || !spacer) return;
+    const mainH = homeMain.getBoundingClientRect().height;
+    const sideH = homeSide.getBoundingClientRect().height - spacer.getBoundingClientRect().height;
+    const gap = parseFloat(getComputedStyle(document.querySelector('.home-layout')).gap) || 28;
+    // 侧栏总高度补齐到接近左侧主内容高度，使其能跟随滚动直到底部
+    const needed = Math.max(0, mainH - sideH - gap);
+    spacer.style.height = needed + 'px';
+  }
+
+  window.addEventListener('load', adjustSideSpacer);
+  window.addEventListener('resize', adjustSideSpacer);
 
   document.getElementById('boxOfficeMore').addEventListener('click', () => goView('timeline', 'movie'));
   document.getElementById('marketCard').addEventListener('click', () => {
     window.open('https://piaofang.maoyan.com/dashboard/movie', '_blank');
   });
 
-  // ============ 回到顶部 ============
   const backTop = document.getElementById('backTop');
   window.addEventListener('scroll', () => {
     backTop.classList.toggle('show', window.scrollY > 400);
   });
   backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
-  // ============ 加载数据并启动 ============
   fetch('data.json')
     .then(r => r.json())
     .then(data => {
-      ({ NEWS, NEWS_FLASH, POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS } = data);
-      // 尝试加载 TMDB 真实数据（带版本参数防浏览器缓存旧版），失败时保留本地模拟数据
-      return fetch('/api/tmdb?v=6')
+      ({ NEWS, NEWS_FLASH, POSTER_MAP, WIDE_POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS } = data);
+      return fetch('/api/tmdb?v=7')
         .then(r => r.json())
         .then(t => {
           if (t && t.code === 0 && t.data && t.data.length) {
-            // TMDB 无短剧品类，本地短剧数据始终合并补充
             NEWS = t.data.concat(data.NEWS.filter(n => n.type === 'duan'));
           }
         })
@@ -415,10 +516,8 @@
     })
     .then(() => {
       initBanner();
-      renderTop10();
       renderCatGroups();
       renderSidebar();
-      renderTimeline(document.getElementById('homeTimeline'), { type: 'all', range: 'all', limit: 12 });
     });
 </script>
 </body>
