@@ -75,14 +75,11 @@
       <!-- 轮播 Banner -->
       <section class="banner" id="banner">
         <div class="slides" id="slides"></div>
-        <div class="banner-bottom">
-          <div class="banner-title-wrap" id="bannerTitle"></div>
-          <div class="banner-controls">
-            <div class="dots" id="dots"></div>
-            <div class="banner-btns">
-              <button class="banner-btn" id="prevBtn" aria-label="上一张">‹</button>
-              <button class="banner-btn" id="nextBtn" aria-label="下一张">›</button>
-            </div>
+        <div class="banner-controls">
+          <div class="dots" id="dots"></div>
+          <div class="banner-btns">
+            <button class="banner-btn" id="prevBtn" aria-label="上一张">‹</button>
+            <button class="banner-btn" id="nextBtn" aria-label="下一张">›</button>
           </div>
         </div>
       </section>
@@ -268,7 +265,6 @@
 
     const slidesEl = document.getElementById('slides');
     const dotsEl = document.getElementById('dots');
-    const titleEl = document.getElementById('bannerTitle');
     let slideIdx = 0;
     let slideTimer = null;
 
@@ -303,8 +299,7 @@
     }).join('');
 
     function renderTitle() {
-      const n = BANNER_ITEMS[slideIdx];
-      titleEl.innerHTML = `<span class="banner-current-title">${n.title}</span>`;
+      // 标题直接由 .slide h2 渲染，保留此函数为占位
     }
     renderTitle();
 
@@ -359,8 +354,9 @@
           if (!t) return '';
           const time = TIMES[NEWS.indexOf(n) % TIMES.length];
           const nodeCls = 'tl-node';
+          const nid = n.id || (n.title + '|' + n.date);
           return `
-            <div class="tl-item" style="--tc:${t.color}">
+            <div class="tl-item" style="--tc:${t.color}" data-id="${nid}">
               <div class="${nodeCls}"></div>
               <article class="card" onclick="toggleCard(this)">
                 <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy" onerror="this.style.visibility='hidden'"></div>
@@ -387,6 +383,21 @@
         }).join('')}
       </section>
     `).join('');
+
+    // 来自首页海报点击的待定位 ID
+    const pending = sessionStorage.getItem('pendingScrollId');
+    if (pending) {
+      sessionStorage.removeItem('pendingScrollId');
+      const target = container.querySelector(`.tl-item[data-id="${pending}"]`);
+      if (target) {
+        setTimeout(() => {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.style.transition = 'background 0.6s';
+          target.style.background = 'rgba(255, 179, 71, 0.18)';
+          setTimeout(() => { target.style.background = ''; }, 1600);
+        }, 60);
+      }
+    }
   }
 
   window.toggleCard = function (card) {
@@ -394,11 +405,29 @@
   };
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
+  // 截断为一句中文简介：TMDB 已截过，再按标点和长度做一次收口
+  function oneLineSummary(text, max = 28) {
+    if (!text) return '精彩内容，不容错过。';
+    let s = text.replace(/^《.+?》/, '').trim();
+    const stops = ['。', '!', '!', ';', '；'];
+    for (const p of stops) {
+      const i = s.indexOf(p);
+      if (i > 8 && i < max) return s.slice(0, i + 1);
+    }
+    if (s.length > max) return s.slice(0, max) + '…';
+    return s;
+  }
+
   function renderCatGroups() {
     const order = ['movie', 'drama', 'show', 'anime', 'duan', 'doc'];
     document.getElementById('catGroups').innerHTML = order.map(type => {
       const t = TYPE_MAP[type];
-      const items = NEWS.filter(n => n.type === type)
+      // 过滤无海报：短剧允许无海报，其他品类必须有 poster
+      const items = NEWS.filter(n => {
+        if (n.type !== type) return false;
+        if (type === 'duan') return true;
+        return !!(n.poster || POSTER_MAP[n.title]);
+      })
         .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
       if (!items.length) return '';
       return `
@@ -409,21 +438,30 @@
           </div>
           <div class="cat-grid">
             ${items.map(n => `
-              <div class="cat-card" data-type="${type}">
+              <div class="cat-card" data-type="${type}" data-id="${n.id || (n.title + '|' + n.date)}">
                 <div class="cat-poster-wrap">
-                  <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy" onerror="this.style.visibility='hidden'">
+                  <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy" onerror="this.parentElement.parentElement.remove()">
                   <span class="cat-badge" style="background:${t.color}">${EVENT_NAME[n.event]}</span>
                 </div>
                 <div class="cat-card-info">
                   <div class="cat-card-title">${n.title}</div>
-                  <div class="cat-card-desc">${n.summary}</div>
+                  <div class="cat-card-desc">${oneLineSummary(n.summary)}</div>
                 </div>
               </div>`).join('')}
           </div>
         </section>`;
     }).join('');
-    document.querySelectorAll('.more-link, .cat-card').forEach(el => {
+    document.querySelectorAll('.more-link').forEach(el => {
       el.addEventListener('click', () => goView('timeline', el.dataset.type));
+    });
+    // 海报点击：跳转到该分类时间线，并自动滚动到对应条目
+    document.querySelectorAll('.cat-card').forEach(el => {
+      el.addEventListener('click', () => {
+        const type = el.dataset.type;
+        const id = el.dataset.id;
+        sessionStorage.setItem('pendingScrollId', id);
+        goView('timeline', type);
+      });
     });
   }
 

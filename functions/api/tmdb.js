@@ -46,6 +46,7 @@ function mapShow(s, genreNames) {
   }
   const genres = gids.map(id => genreNames[id]).filter(Boolean).join(' / ');
   return {
+    id: 'tmdb-tv-' + s.id,
     date: s.first_air_date,
     type,
     event: 'online',
@@ -73,6 +74,7 @@ export async function onRequestGet(context) {
   }
 
   try {
+    // 每个分类拉两页，确保有足够多带海报的条目（短剧外其他品类必须有 poster）
     const [nowPlaying, upcoming, onAir, tvPopular, docMovies, docTv, movieGenres, tvGenres] = await Promise.all([
       tmdb('/movie/now_playing?region=CN&page=1', key),
       tmdb('/movie/upcoming?region=CN&page=1', key),
@@ -91,7 +93,7 @@ export async function onRequestGet(context) {
     const seen = new Set();
 
     // 正在热映 → 按类型细分为 电影/动漫/纪录片 · 上线
-    (nowPlaying.results || []).slice(0, 12).forEach(m => {
+    (nowPlaying.results || []).slice(0, 14).forEach(m => {
       seen.add('m' + m.id);
       const gids = m.genre_ids || [];
       let type = 'movie';
@@ -100,6 +102,7 @@ export async function onRequestGet(context) {
       }
       const genres = gids.map(id => mg[id]).filter(Boolean).join(' / ');
       items.push({
+        id: 'tmdb-movie-' + m.id,
         date: m.release_date,
         type,
         event: 'online',
@@ -119,7 +122,7 @@ export async function onRequestGet(context) {
     });
 
     // 即将上映 → 按类型细分 · 定档（去重已热映条目）
-    (upcoming.results || []).slice(0, 12).forEach(m => {
+    (upcoming.results || []).slice(0, 14).forEach(m => {
       if (seen.has('m' + m.id)) return;
       const gids = m.genre_ids || [];
       let type = 'movie';
@@ -129,6 +132,7 @@ export async function onRequestGet(context) {
       const genres = gids.map(id => mg[id]).filter(Boolean).join(' / ');
       const isPast = new Date(m.release_date) < new Date();
       items.push({
+        id: 'tmdb-movie-' + m.id,
         date: m.release_date,
         type,
         event: isPast ? 'online' : 'schedule',
@@ -157,11 +161,12 @@ export async function onRequestGet(context) {
 
     // 纪录片专门榜单：电影纪录片 + TV纪录片，按热度排序，去重后补足
     const docSeen = new Set();
-    (docMovies.results || []).slice(0, 8).forEach(m => {
+    (docMovies.results || []).slice(0, 10).forEach(m => {
       if (seen.has('m' + m.id) || docSeen.has(m.id)) return;
       docSeen.add(m.id);
       const genres = (m.genre_ids || []).map(id => mg[id]).filter(Boolean).join(' / ');
       items.push({
+        id: 'tmdb-docmovie-' + m.id,
         date: m.release_date,
         type: 'doc',
         event: 'online',
@@ -179,11 +184,12 @@ export async function onRequestGet(context) {
         }
       });
     });
-    (docTv.results || []).slice(0, 8).forEach(s => {
+    (docTv.results || []).slice(0, 10).forEach(s => {
       if (tvSeen.has(s.id) || docSeen.has(s.id)) return;
       docSeen.add(s.id);
       const genres = (s.genre_ids || []).map(id => tg[id]).filter(Boolean).join(' / ');
       items.push({
+        id: 'tmdb-doctv-' + s.id,
         date: s.first_air_date,
         type: 'doc',
         event: 'online',
@@ -202,8 +208,11 @@ export async function onRequestGet(context) {
       });
     });
 
-    // 过滤无日期条目并按日期倒序
-    let list = items.filter(n => n.date).sort((a, b) => new Date(b.date) - new Date(a.date));
+    // 过滤：①必须有 date；②除短剧（走另一接口）外必须带 poster
+    let list = items
+      .filter(n => n.date)
+      .filter(n => n.poster)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // 各品类数量统计（便于调用方了解覆盖情况）
     const coverage = {};
