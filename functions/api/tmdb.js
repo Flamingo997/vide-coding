@@ -36,16 +36,10 @@ function hasChinese(text) {
   return /[\u4e00-\u9fff]/.test(text || '');
 }
 
-// 取一句话简介：中文按句号截断，英文按句号截断
+// 返回完整简介（仅清理空白）
 function zhSummary(overview) {
   if (!overview) return '';
-  const s = overview.replace(/\s+/g, ' ').trim();
-  // 按句号/问号/感叹号截断为第一句
-  const firstSentence = s.split(/[。.!?！？]/)[0];
-  if (firstSentence && firstSentence.length > 5) {
-    return firstSentence.trim() + (hasChinese(firstSentence) ? '。' : '.');
-  }
-  return s.length > 80 ? s.slice(0, 80) + '…' : s;
+  return overview.replace(/\s+/g, ' ').trim();
 }
 
 function fmtDate(dateStr) {
