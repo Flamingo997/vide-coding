@@ -372,13 +372,13 @@
                     <span class="tag-solid">${t.name}</span>
                   </div>
                   <h3 class="card-title">${n.title}<span class="detail-hint">点击卡片展开详情</span></h3>
-                  <p class="card-summary">${n.summary || n.detail.intro || '暂无简介'}</p>
+                  <p class="card-summary">${n.summary || n.detail?.intro || '暂无简介'}</p>
                   <div class="card-foot">
                     <span class="source">来源：${n.source}</span>
-                    <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 →</a>
+                    <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 -></a>
                   </div>
                   <div class="detail">
-                    <p>${n.detail.intro}</p>
+                    <p>${n.detail?.intro || n.summary || '暂无简介'}</p>
                     <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
                     <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
                     <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
@@ -415,16 +415,15 @@
   function hasChinese(text) {
     return /[\u4e00-\u9fff]/.test(text || '');
   }
-  // 截断为一句中文简介：TMDB 已截过，再按标点和长度做一次收口
-  function oneLineSummary(text, max = 30) {
-    if (!text) return '精彩内容，不容错过。';
+  // 截断为一句简介：中英文通用，按标点截断第一句
+  function oneLineSummary(text) {
+    if (!text || text.length < 2) return '暂无简介';
     let s = text.replace(/^《.+?》/, '').trim();
-    const stops = ['。', '!', '!', ';', '；', '.'];
-    for (const p of stops) {
-      const i = s.indexOf(p);
-      if (i > 6 && i < max + 10) return s.slice(0, i + 1);
-    }
-    if (s.length > max) return s.slice(0, max) + '…';
+    // 按中英文句号/问号/感叹号截断
+    const m = s.match(/^(.+?)[。.!?！？]/);
+    if (m && m[1].length > 5) return m[1] + (hasChinese(m[1]) ? '。' : '.');
+    // 没有句号，按长度截断
+    if (s.length > 35) return s.slice(0, 35) + '…';
     return s;
   }
 
@@ -448,10 +447,8 @@
           </div>
           <div class="cat-grid">
             ${items.map(n => {
-              const summary = n.summary || '';
-              const isChinese = hasChinese(summary);
-              // 首页卡片：中文直接截断，英文截断为一句话
-              const cardDesc = isChinese ? oneLineSummary(summary) : oneLineSummary(summary, 35);
+              const summary = n.summary || n.detail?.intro || '';
+              const cardDesc = oneLineSummary(summary);
               return `
               <div class="cat-card" data-type="${type}" data-id="${n.id || (n.title + '|' + n.date)}">
                 <div class="cat-poster-wrap">
@@ -460,7 +457,7 @@
                 </div>
                 <div class="cat-card-info">
                   <div class="cat-card-title">${n.title}</div>
-                  <div class="cat-card-desc">${cardDesc || '暂无简介'}</div>
+                  <div class="cat-card-desc">${cardDesc}</div>
                 </div>
               </div>`;
             }).join('')}
@@ -562,7 +559,7 @@
       ({ NEWS, NEWS_FLASH, POSTER_MAP, WIDE_POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS } = data);
       // 合并 TMDB（电影/剧/综艺/动漫/纪录片）与 kuleu（短剧）两类实时数据；
       // data.json 内的静态条目仅作首页兜底展示。
-      const tmbdQ = fetch('/api/tmdb?v=9').then(r => r.json()).catch(() => null);
+      const tmbdQ = fetch('/api/tmdb?v=10').then(r => r.json()).catch(() => null);
       const duanQ = fetch('/api/shortdrama?limit=12').then(r => r.json()).catch(() => null);
       return Promise.all([tmbdQ, duanQ]).then(([tmbd, duan]) => {
         const merged = (data.NEWS || []).slice();
