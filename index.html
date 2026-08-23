@@ -4,8 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<!-- v2.0 - Cloudflare Pages deployment -->
-<link rel="stylesheet" href="styles.css?v=17">
+<link rel="stylesheet" href="styles.css?v=old1">
 </head>
 <body>
 
@@ -75,11 +74,14 @@
       <!-- 轮播 Banner -->
       <section class="banner" id="banner">
         <div class="slides" id="slides"></div>
-        <div class="banner-controls">
-          <div class="dots" id="dots"></div>
-          <div class="banner-btns">
-            <button class="banner-btn prev" id="prevBtn" aria-label="上一张">‹</button>
-            <button class="banner-btn next" id="nextBtn" aria-label="下一张">›</button>
+        <div class="banner-bottom">
+          <div class="banner-title-wrap" id="bannerTitle"></div>
+          <div class="banner-controls">
+            <div class="dots" id="dots"></div>
+            <div class="banner-btns">
+              <button class="banner-btn" id="prevBtn" aria-label="上一张">‹</button>
+              <button class="banner-btn" id="nextBtn" aria-label="下一张">›</button>
+            </div>
           </div>
         </div>
       </section>
@@ -251,14 +253,8 @@
       .map(n => {
         const poster = n.poster || POSTER_MAP[n.title];
         const wide = n.widePoster || WIDE_POSTER_MAP[n.title] || null;
-        // 去掉定档日期，只保留影片名
-        const cleanTitle = n.title
-          .replace(/定档\d{4}年\d+月\d+日/, '')
-          .replace(/定档\d+月\d+日/, '')
-          .replace(/\s+/g, ' ')
-          .trim();
         return {
-          title: cleanTitle,
+          title: n.title,
           poster,
           wide,
           type: n.type,
@@ -271,6 +267,7 @@
 
     const slidesEl = document.getElementById('slides');
     const dotsEl = document.getElementById('dots');
+    const titleEl = document.getElementById('bannerTitle');
     let slideIdx = 0;
     let slideTimer = null;
 
@@ -305,7 +302,8 @@
     }).join('');
 
     function renderTitle() {
-      // 标题直接由 .slide h2 渲染，保留此函数为占位
+      const n = BANNER_ITEMS[slideIdx];
+      titleEl.innerHTML = `<span class="banner-current-title">${n.title}</span>`;
     }
     renderTitle();
 
@@ -332,18 +330,11 @@
   function renderTimeline(container, opt) {
     const { type = 'all', range = 'all', keyword: kw = '', limit = 0 } = opt;
     let filtered = NEWS.filter(n => {
-      if (!n.date || n.date === '0000-00-00') return false;
       const typeOk = type === 'all' || n.type === type;
       const rangeOk = inRange(n.date, range);
       const kwOk = !kw || n.title.includes(kw) || n.summary.includes(kw);
       return typeOk && rangeOk && kwOk;
-    }).sort((a, b) => {
-      const da = new Date(a.date), db = new Date(b.date);
-      if (isNaN(db) && isNaN(da)) return 0;
-      if (isNaN(db)) return -1;
-      if (isNaN(da)) return 1;
-      return db - da;
-    });
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
     if (limit > 0) filtered = filtered.slice(0, limit);
 
@@ -367,25 +358,24 @@
           if (!t) return '';
           const time = TIMES[NEWS.indexOf(n) % TIMES.length];
           const nodeCls = 'tl-node';
-          const nid = n.id || (n.title + '|' + n.date);
           return `
-            <div class="tl-item" style="--tc:${t.color}" data-id="${nid}">
+            <div class="tl-item" style="--tc:${t.color}">
               <div class="${nodeCls}"></div>
               <article class="card" onclick="toggleCard(this)">
-                <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy" onerror="this.style.visibility='hidden'"></div>
+                <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy"></div>
                 <div class="card-main">
                   <div class="card-top">
                     <span class="card-time">${time} · ${EVENT_NAME[n.event]}</span>
                     <span class="tag-solid">${t.name}</span>
                   </div>
                   <h3 class="card-title">${n.title}<span class="detail-hint">点击卡片展开详情</span></h3>
-                  <p class="card-summary">${n.summary || n.detail?.intro || '暂无简介'}</p>
+                  <p class="card-summary">${n.summary}</p>
                   <div class="card-foot">
                     <span class="source">来源：${n.source}</span>
-                    <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 -></a>
+                    <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 →</a>
                   </div>
                   <div class="detail">
-                    <p>${n.detail?.intro || n.summary || '暂无简介'}</p>
+                    <p>${n.detail.intro}</p>
                     <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
                     <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
                     <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
@@ -396,21 +386,6 @@
         }).join('')}
       </section>
     `).join('');
-
-    // 来自首页海报点击的待定位 ID
-    const pending = sessionStorage.getItem('pendingScrollId');
-    if (pending) {
-      sessionStorage.removeItem('pendingScrollId');
-      const target = container.querySelector(`.tl-item[data-id="${pending}"]`);
-      if (target) {
-        setTimeout(() => {
-          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          target.style.transition = 'background 0.6s';
-          target.style.background = 'rgba(255, 179, 71, 0.18)';
-          setTimeout(() => { target.style.background = ''; }, 1600);
-        }, 60);
-      }
-    }
   }
 
   window.toggleCard = function (card) {
@@ -418,32 +393,11 @@
   };
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
-  // 检测是否包含中文
-  function hasChinese(text) {
-    return /[\u4e00-\u9fff]/.test(text || '');
-  }
-  // 截断为一句简介：中英文通用，按标点截断第一句
-  function oneLineSummary(text) {
-    if (!text || text.length < 2) return '暂无简介';
-    let s = text.replace(/^《.+?》/, '').trim();
-    // 按中英文句号/问号/感叹号截断为第一句
-    const m = s.match(/^(.+?)[。.!?！？]/);
-    if (m && m[1].length > 3) s = m[1].trim();
-    // 首页一行展示，严格限制长度
-    if (s.length > 20) return s.slice(0, 20) + '…';
-    return s;
-  }
-
   function renderCatGroups() {
     const order = ['movie', 'drama', 'show', 'anime', 'duan', 'doc'];
     document.getElementById('catGroups').innerHTML = order.map(type => {
       const t = TYPE_MAP[type];
-      // 过滤无海报：短剧允许无海报，其他品类必须有 poster
-      const items = NEWS.filter(n => {
-        if (n.type !== type) return false;
-        if (type === 'duan') return true;
-        return !!(n.poster || POSTER_MAP[n.title]);
-      })
+      const items = NEWS.filter(n => n.type === type)
         .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
       if (!items.length) return '';
       return `
@@ -453,35 +407,22 @@
             <a class="more-link" data-type="${type}">查看更多 →</a>
           </div>
           <div class="cat-grid">
-            ${items.map(n => {
-              const summary = n.summary || n.detail?.intro || '';
-              const cardDesc = oneLineSummary(summary);
-              return `
-              <div class="cat-card" data-type="${type}" data-id="${n.id || (n.title + '|' + n.date)}">
+            ${items.map(n => `
+              <div class="cat-card" data-type="${type}">
                 <div class="cat-poster-wrap">
-                  <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy" onerror="this.parentElement.parentElement.remove()">
+                  <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
                   <span class="cat-badge" style="background:${t.color}">${EVENT_NAME[n.event]}</span>
                 </div>
                 <div class="cat-card-info">
                   <div class="cat-card-title">${n.title}</div>
-                  <div class="cat-card-desc">${cardDesc}</div>
+                  <div class="cat-card-desc">${n.summary}</div>
                 </div>
-              </div>`;
-            }).join('')}
+              </div>`).join('')}
           </div>
         </section>`;
     }).join('');
-    document.querySelectorAll('.more-link').forEach(el => {
+    document.querySelectorAll('.more-link, .cat-card').forEach(el => {
       el.addEventListener('click', () => goView('timeline', el.dataset.type));
-    });
-    // 海报点击：跳转到该分类时间线，并自动滚动到对应条目
-    document.querySelectorAll('.cat-card').forEach(el => {
-      el.addEventListener('click', () => {
-        const type = el.dataset.type;
-        const id = el.dataset.id;
-        sessionStorage.setItem('pendingScrollId', id);
-        goView('timeline', type);
-      });
     });
   }
 
@@ -564,20 +505,14 @@
     .then(r => r.json())
     .then(data => {
       ({ NEWS, NEWS_FLASH, POSTER_MAP, WIDE_POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS } = data);
-      // 合并 TMDB（电影/剧/综艺/动漫/纪录片）与 kuleu（短剧）两类实时数据；
-      // data.json 内的静态条目仅作首页兜底展示。
-      const tmbdQ = fetch('/api/tmdb?v=10').then(r => r.json()).catch(() => null);
-      const duanQ = fetch('/api/shortdrama?limit=12').then(r => r.json()).catch(() => null);
-      return Promise.all([tmbdQ, duanQ]).then(([tmbd, duan]) => {
-        const merged = (data.NEWS || []).slice();
-        if (tmbd && tmbd.code === 0 && tmbd.data && tmbd.data.length) {
-          merged.push(...tmbd.data);
-        }
-        if (duan && duan.code === 0 && duan.data && duan.data.length) {
-          merged.push(...duan.data);
-        }
-        NEWS = merged;
-      });
+      return fetch('/api/tmdb?v=7')
+        .then(r => r.json())
+        .then(t => {
+          if (t && t.code === 0 && t.data && t.data.length) {
+            NEWS = t.data.concat(data.NEWS.filter(n => n.type === 'duan'));
+          }
+        })
+        .catch(() => {});
     })
     .then(() => {
       initBanner();

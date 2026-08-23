@@ -1,79 +1,296 @@
 {
-  "NEWS": [],
-  "NEWS_FLASH": [
+  "NEWS": [
     {
-      "title": "暑期档总票房突破新高，多部新片接力上映",
-      "time": "1小时前",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-23",
+      "type": "drama",
+      "event": "online",
+      "status": "released",
+      "title": "《长安霓裳录》全网首播",
+      "summary": "盛唐霓裳羽衣案，林深苏晚共破长安谜局",
+      "source": "腾讯视频官微",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "该剧以盛唐为背景，融合悬疑推理与宫廷权谋。舞坊首席舞姬离奇身亡，刑部侍郎林晏奉命追查，却发现案件背后牵连一桩十年前的旧案与一卷失传的霓裳羽衣曲谱。",
+        "cast": "林深 饰 林晏 / 苏晚 饰 沈月容 / 陈宥 饰 裴长青",
+        "platform": "腾讯视频 独播 / 每周三、四、五 20:00 更新两集",
+        "ep": "全 36 集"
+      }
     },
     {
-      "title": "多部现实题材剧集官宣定档，下半年排播密集",
-      "time": "2小时前",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-22",
+      "type": "movie",
+      "event": "online",
+      "status": "released",
+      "title": "《深海回响》全国院线上映",
+      "summary": "深海深渊藏异象，张震带队探秘未知恐惧",
+      "source": "电影官微",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "一支深海科考队在马里亚纳海沟执行任务时，捕捉到一段无法解释的低频声波。随着下潜深度增加，队员接连出现幻觉，他们逐渐意识到，深渊之中并非只有黑暗。",
+        "cast": "张震 饰 队长周远 / 咏梅 饰 生物学家方汀 / 王传君 饰 工程师老郑",
+        "platform": "全国院线 / IMAX 同步上映",
+        "ep": "片长 128 分钟"
+      }
     },
     {
-      "title": "知名导演新作开机，实力派演员阵容曝光",
-      "time": "3小时前",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-20",
+      "type": "show",
+      "event": "online",
+      "status": "released",
+      "title": "《声浪2026》第三季回归开播",
+      "summary": "原创音乐人集结，李健谭维维彭飞坐镇声浪导师",
+      "source": "芒果TV官博",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "《声浪》第三季回归原创音乐本源，取消往季翻唱赛制，全程聚焦原创作品创作与演绎。节目邀请三位资深音乐人担任\"声浪导师\"，陪伴选手完成 12 期主题创作挑战。",
+        "cast": "导师：李健 / 谭维维 / 彭飞；主持：何炅",
+        "platform": "湖南卫视 + 芒果TV 每周日 22:00 同步直播",
+        "ep": "共 12 期"
+      }
     },
     {
-      "title": "综艺节目市场回暖，多档老牌节目宣布回归",
-      "time": "5小时前",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-18",
+      "type": "anime",
+      "event": "online",
+      "status": "released",
+      "title": "《雾山行》国产动画第二季上线",
+      "summary": "水墨国风志怪归来，白骨岭新篇热血开启",
+      "source": "哔哩哔哩动画",
+      "sourceLink": "https://www.bilibili.com/",
+      "detail": {
+        "intro": "少年行者衔枝踏入雾山深处，在与各路精怪的交锋中逐渐揭开雾山封印的真相。第二季开启\"白骨岭\"新篇章，新角色白骨夫人登场，画风延续水墨与重彩结合的东方美学。",
+        "cast": "配音：阿杰 饰 衔枝 / 乔诗语 饰 白骨夫人 / 图特哈蒙 饰 老龟",
+        "platform": "哔哩哔哩 独播 / 每周六 12:00 更新一集",
+        "ep": "全 14 集"
+      }
     },
     {
-      "title": "短剧行业规模持续增长，精品化趋势明显",
-      "time": "6小时前",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-16",
+      "type": "movie",
+      "event": "schedule",
+      "status": "pending",
+      "title": "《逆光行者》定档 8 月 8 日全国公映",
+      "summary": "文牧野现实主义力作，易烊千玺演绎骑手人生",
+      "source": "影片官方微博",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "影片改编自真实故事，讲述一名外卖骑手在都市洪流中奔波求生，却因一次意外卷入一场关于算法与人情的抉择。导演以纪实风格呈现平台经济下普通人的尊严与挣扎。",
+        "cast": "易烊千玺 饰 骑手陈默 / 殷桃 饰 站长周姐 / 章宇 饰 工友老六",
+        "platform": "全国院线 / 8 月 8 日公映",
+        "ep": "片长 116 分钟"
+      }
     },
     {
-      "title": "纪录片节展公布入围名单，国产作品表现亮眼",
-      "time": "8小时前",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-15",
+      "type": "drama",
+      "event": "online",
+      "status": "released",
+      "title": "《无声告白》爱奇艺迷雾剧场开播",
+      "summary": "家庭秘密之下，谭卓秦昊上演沉默的真相",
+      "source": "爱奇艺官微",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "女儿莉迪亚的意外离世，撕开了一个华人家庭表面平静下的裂痕。母亲始终无法接受现实，父亲在愧疚中沉默，而那个被忽视的儿子，手中握着揭开真相的钥匙。",
+        "cast": "谭卓 饰 母亲玛丽琳 / 秦昊 饰 父亲詹姆斯 / 张子枫 饰 莉迪亚",
+        "platform": "爱奇艺 迷雾剧场 / 每周一、二 20:00 各更新两集",
+        "ep": "全 24 集"
+      }
     },
     {
-      "title": "动画电影暑期档集中发力，亲子观影需求旺盛",
-      "time": "10小时前",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-12",
+      "type": "show",
+      "event": "schedule",
+      "status": "pending",
+      "title": "《慢游中国》第二季定档 8 月 2 日开播",
+      "summary": "黄渤周冬雨张亚东结伴，慢游八座千年古城",
+      "source": "优酷人文官博",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "没有任务、没有竞技，只有几位老友结伴走进古城的街巷，与当地手艺人、老居民慢节奏相处。第二季新增\"古城手艺\"单元，记录濒临消失的传统技艺。",
+        "cast": "常驻：黄渤 / 周冬雨 / 张亚东",
+        "platform": "优酷 人文频道 / 8 月 2 日起每周五 12:00",
+        "ep": "共 10 期"
+      }
     },
     {
-      "title": "视频平台发布下半年片单，独播内容竞争激烈",
-      "time": "12小时前",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-10",
+      "type": "anime",
+      "event": "advance",
+      "status": "pending",
+      "title": "《星海战记》提档至 7 月 28 日首播",
+      "summary": "星际远征遭遇古老文明，少年舰长改写宇宙真相",
+      "source": "哔哩哔哩动画",
+      "sourceLink": "https://www.bilibili.com/",
+      "detail": {
+        "intro": "22 世纪，人类为寻找新家园踏上星际远征。少年舰长驾驶星舰穿越虫洞，却在未知星域遭遇一支自称\"守望者\"的古老文明，宇宙的真相由此改写。",
+        "cast": "配音：山新 饰 舰长星河 / 藤新 饰 AI领航员 / 宝木中阳 饰 守望者使者",
+        "platform": "哔哩哔哩 独播 / 7 月 28 日起每周二 20:00",
+        "ep": "全 26 集"
+      }
     },
     {
-      "title": "经典老片重映受热捧，影迷观影热情不减",
-      "time": "昨天",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-08",
+      "type": "movie",
+      "event": "online",
+      "status": "released",
+      "title": "《夏日晚风》点映开启",
+      "summary": "毕业之夏的约定，一场迟到三年的告白",
+      "source": "电影官微",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "高考结束的那个夏天，林一和苏夏在小镇的旧书店重逢。他们约定在分别前完成一份\"夏天清单\"，却没料到，最后一件待办事项，是一场迟到了三年的告白。",
+        "cast": "新人演员：陈禾 饰 林一 / 何蓝 饰 苏夏",
+        "platform": "全国院线点映 / 7 月 8 日-14 日限时点映，8 月 1 日正式公映",
+        "ep": "片长 102 分钟"
+      }
     },
     {
-      "title": "影视基地拍摄项目增多，行业产能逐步恢复",
-      "time": "昨天",
-      "url": "https://www.themoviedb.org/"
+      "date": "2026-07-05",
+      "type": "drama",
+      "event": "schedule",
+      "status": "pending",
+      "title": "《破晓行动》定档 8 月 15 日优酷独播",
+      "summary": "张译黄景瑜强强联手，边境缉毒生死卧底",
+      "source": "优酷剧集官博",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "根据真实案件改编。一名缉毒警察以假身份潜入边境毒枭集团，在刀尖上行走的三年里，他必须在身份暴露前找到贩毒网络的核心证据，却不知组织内部早已埋下内鬼。",
+        "cast": "张译 饰 卧底陈越 / 黄景瑜 饰 队长陆征 / 颜丙燕 饰 局长",
+        "platform": "优酷 独播 / 8 月 15 日起每日 20:00 更新",
+        "ep": "全 30 集"
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "type": "show",
+      "event": "online",
+      "status": "released",
+      "title": "《脑力竞技场》新一季开播",
+      "summary": "人机对决脑力交锋，探索人类思维边界",
+      "source": "爱奇艺综艺官博",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "最强大脑的舞台迎来新对手——AI。本季新增\"人机对决\"环节，选手需要在记忆、推理、空间想象等领域直面人工智能的挑战，探讨人类思维与算法的边界。",
+        "cast": "主持：蒋昌建；科学评审：魏坤琳、施一公",
+        "platform": "江苏卫视 + 爱奇艺 / 每周五 21:10",
+        "ep": "共 10 期"
+      }
+    },
+    {
+      "date": "2026-06-28",
+      "type": "anime",
+      "event": "online",
+      "status": "released",
+      "title": "《猫町奇谭》全集上线",
+      "summary": "水彩画风治愈系，猫咪与人类的温暖奇遇",
+      "source": "哔哩哔哩动画",
+      "sourceLink": "https://www.bilibili.com/",
+      "detail": {
+        "intro": "在无人知晓的猫町，每只猫咪都守护着一个人类的心愿。当旅人误入小镇，一场关于告别、等待与重逢的奇遇就此展开。全片水彩画风，治愈舒缓。",
+        "cast": "配音：姜广涛 饰 旅人 / 山新 饰 橘猫阿吉 / 杨天翔 饰 黑猫夜",
+        "platform": "哔哩哔哩 独播 / 全 12 集一次性上线",
+        "ep": "全 12 集"
+      }
+    },
+    {
+      "date": "2026-07-19",
+      "type": "doc",
+      "event": "online",
+      "status": "released",
+      "title": "《山河笔记》自然纪录片上线",
+      "summary": "历时两年摄制，记录中国八处秘境生态人文",
+      "source": "CCTV纪录官微",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "摄制组历时两年深入八处人迹罕至的自然秘境，从怒江峡谷的溜索到阿尔金山的荒原，以四季为脉络，记录山川地貌、珍稀生灵与世代栖居于此的人们之间沉默而坚韧的联结。",
+        "cast": "解说：李立宏；摄影指导：王源宗",
+        "platform": "CCTV-9 纪录频道 + 央视频 / 每周一至周五 20:00",
+        "ep": "全 8 集"
+      }
+    },
+    {
+      "date": "2026-07-06",
+      "type": "doc",
+      "event": "schedule",
+      "status": "pending",
+      "title": "《丝路遗珍》定档 8 月 10 日开播",
+      "summary": "重走丝绸之路，揭开六处遗址尘封往事",
+      "source": "腾讯视频纪录片官博",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "从敦煌到撒马尔罕，摄制组获准深入六处丝绸之路关键考古现场，以 4K 影像与三维复原技术，再现这条古老商道上文明交汇的辉煌瞬间与那些被黄沙掩埋的日常。",
+        "cast": "解说：周涛；学术顾问：北京大学考古文博学院",
+        "platform": "腾讯视频 + 哔哩哔哩 / 8 月 10 日起每周一 20:00",
+        "ep": "全 6 集"
+      }
+    },
+    {
+      "date": "2026-07-21",
+      "type": "duan",
+      "event": "online",
+      "status": "released",
+      "title": "《闪婚后她野翻了》全集上线",
+      "summary": "契约婚姻先婚后爱，落魄千金野翻全场",
+      "source": "红果短剧官微",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "落魄千金与冷面总裁因一纸契约闪婚，从互相试探到真心相待，节奏明快、反转密集，单集两分钟看点上头。",
+        "cast": "主演：林小满、顾泽",
+        "platform": "红果短剧 App 全集免费看",
+        "ep": "全 80 集 · 单集约 2 分钟"
+      }
+    },
+    {
+      "date": "2026-07-15",
+      "type": "duan",
+      "event": "schedule",
+      "status": "pending",
+      "title": "《回到1995当首富》定档 8 月 5 日开播",
+      "summary": "重返90年代商海翻盘，年代爽感拉满",
+      "source": "抖音短剧官号",
+      "sourceLink": "https://weibo.com/",
+      "detail": {
+        "intro": "中年失意的陈默一觉醒来回到 1995 年，凭借对未来的记忆从摆地摊起步，在商海浪潮中抢占先机，年代质感与爽感兼具。",
+        "cast": "主演：赵启铭、苏婉清",
+        "platform": "抖音独播 / 8 月 5 日起每日更新",
+        "ep": "全 100 集 · 单集约 2 分钟"
+      }
     }
   ],
+  "NEWS_FLASH": [
+    { "title": "暑期档总票房突破新高，多部新片接力上映", "time": "1小时前", "url": "https://ent.huanqiu.com/" },
+    { "title": "多部现实题材剧集官宣定档，下半年排播密集", "time": "2小时前", "url": "https://ent.huanqiu.com/" },
+    { "title": "知名导演新作开机，实力派演员阵容曝光", "time": "3小时前", "url": "https://ent.huanqiu.com/" },
+    { "title": "综艺节目市场回暖，多档老牌节目宣布回归", "time": "5小时前", "url": "https://ent.huanqiu.com/" },
+    { "title": "短剧行业规模持续增长，精品化趋势明显", "time": "6小时前", "url": "https://ent.huanqiu.com/" },
+    { "title": "纪录片节展公布入围名单，国产作品表现亮眼", "time": "8小时前", "url": "https://ent.huanqiu.com/" },
+    { "title": "动画电影暑期档集中发力，亲子观影需求旺盛", "time": "10小时前", "url": "https://ent.huanqiu.com/" },
+    { "title": "视频平台发布下半年片单，独播内容竞争激烈", "time": "12小时前", "url": "https://ent.huanqiu.com/" },
+    { "title": "经典老片重映受热捧，影迷观影热情不减", "time": "昨天", "url": "https://ent.huanqiu.com/" },
+    { "title": "影视基地拍摄项目增多，行业产能逐步恢复", "time": "昨天", "url": "https://ent.huanqiu.com/" }
+  ],
   "POSTER_MAP": {
-    "《长安三万里》正在热映": "posters/01_chang_an.jpg",
-    "《流浪地球2》全国热映": "posters/02_liulang2.jpg",
-    "《热辣滚烫》全国热映": "posters/03_relang.jpg",
-    "《飞驰人生2》正在热映": "posters/04_feichi.jpg",
-    "《狂飙》全网热播中": "posters/05_kuangbiao.jpg",
-    "《漫长的季节》全季热播": "posters/06_mang_ji.jpg",
-    "《繁花》全网热播中": "posters/07_fanhua.jpg",
-    "《隐秘的角落》正在热播": "posters/08_yinmi.jpg",
-    "《歌手2024》热播中": "posters/09_geshou.jpg",
-    "《向往的生活》系列回归": "posters/10_xiangwang.jpg",
-    "《哪吒之魔童降世》热映中": "posters/11_nezhai.jpg",
-    "《深海》正在热映": "posters/12_shenhai.jpg",
-    "《雾山五行》热播中": "posters/13_wushan.jpg",
-    "《舌尖上的中国》正在热播": "posters/14_shejian.jpg",
-    "《人生一串》正在热播": "posters/15_yichuan.jpg",
-    "《逃出大英博物馆》全集上线": "posters/16_taochu.jpg"
+    "《长安霓裳录》全网首播": "posters/01_chang_an.jpg",
+    "《深海回响》全国院线上映": "posters/02_shen_hai.jpg",
+    "《声浪2026》第三季回归开播": "posters/03_sheng_lang.jpg",
+    "《雾山行》国产动画第二季上线": "posters/04_wu_shan.jpg",
+    "《逆光行者》定档 8 月 8 日全国公映": "posters/05_ni_guang.jpg",
+    "《无声告白》爱奇艺迷雾剧场开播": "posters/06_wu_sheng.jpg",
+    "《慢游中国》第二季定档 8 月 2 日开播": "posters/07_man_you.jpg",
+    "《星海战记》提档至 7 月 28 日首播": "posters/08_xing_hai.jpg",
+    "《夏日晚风》点映开启": "posters/09_xia_ri.jpg",
+    "《破晓行动》定档 8 月 15 日优酷独播": "posters/10_po_xiao.jpg",
+    "《脑力竞技场》新一季开播": "posters/11_nao_li.jpg",
+    "《猫町奇谭》全集上线": "posters/12_mao_ding.jpg",
+    "《山河笔记》自然纪录片上线": "posters/13_shan_he.jpg",
+    "《丝路遗珍》定档 8 月 10 日开播": "posters/14_si_lu.jpg",
+    "《闪婚后她野翻了》全集上线": "posters/15_shan_hun.jpg",
+    "《回到1995当首富》定档 8 月 5 日开播": "posters/16_hui_dao.jpg"
   },
   "WIDE_POSTER_MAP": {
-    "《长安三万里》正在热映": "posters/01_chang_an.jpg",
-    "《流浪地球2》全国热映": "posters/02_liulang2.jpg",
-    "《深海》正在热映": "posters/12_shenhai.jpg"
+    "《长安霓裳录》全网首播": "posters/01_chang_an_wide.jpg",
+    "《深海回响》全国院线上映": "posters/02_shen_hai_wide.jpg",
+    "《星海战记》提档至 7 月 28 日首播": "posters/08_xing_hai_wide.jpg"
   },
   "TYPE_MAP": {
     "movie": {
