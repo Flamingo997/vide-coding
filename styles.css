@@ -166,14 +166,14 @@ body {
 /* ===== 首页布局 ===== */
 .home-layout {
   display: flex;
-  gap: 28px;
+  gap: 56px;
   max-width: 1180px;
   margin: 28px auto;
   padding: 0 28px;
   align-items: flex-start;
 }
 .home-main { flex: 1 1 auto; min-width: 0; }
-.home-side { flex: 0 0 300px; position: sticky; bottom: 28px; top: 100px; align-self: flex-start; margin-left: auto; }
+.home-side { flex: 0 0 300px; position: sticky; bottom: 28px; top: 100px; align-self: flex-start; }
 
 /* 视图切换过渡动画 */
 .view-enter { animation: viewFadeIn 0.8s cubic-bezier(0.25, 0.1, 0.25, 1); }
