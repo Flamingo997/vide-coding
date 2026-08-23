@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=old2">
+<link rel="stylesheet" href="styles.css?v=old3">
 </head>
 <body>
 
@@ -252,8 +252,9 @@
       .map(n => {
         const poster = n.poster || POSTER_MAP[n.title];
         const wide = n.widePoster || WIDE_POSTER_MAP[n.title] || null;
+        const cleanTitle = n.title.replace(/》定档.*$/, '》');
         return {
-          title: n.title,
+          title: cleanTitle,
           poster,
           wide,
           type: n.type,
