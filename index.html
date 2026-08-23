@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
 <!-- v2.0 - Cloudflare Pages deployment -->
-<link rel="stylesheet" href="styles.css?v=11">
+<link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
 
@@ -332,11 +332,18 @@
   function renderTimeline(container, opt) {
     const { type = 'all', range = 'all', keyword: kw = '', limit = 0 } = opt;
     let filtered = NEWS.filter(n => {
+      if (!n.date || n.date === '0000-00-00') return false;
       const typeOk = type === 'all' || n.type === type;
       const rangeOk = inRange(n.date, range);
       const kwOk = !kw || n.title.includes(kw) || n.summary.includes(kw);
       return typeOk && rangeOk && kwOk;
-    }).sort((a, b) => new Date(b.date) - new Date(a.date));
+    }).sort((a, b) => {
+      const da = new Date(a.date), db = new Date(b.date);
+      if (isNaN(db) && isNaN(da)) return 0;
+      if (isNaN(db)) return -1;
+      if (isNaN(da)) return 1;
+      return db - da;
+    });
 
     if (limit > 0) filtered = filtered.slice(0, limit);
 
@@ -419,11 +426,11 @@
   function oneLineSummary(text) {
     if (!text || text.length < 2) return '暂无简介';
     let s = text.replace(/^《.+?》/, '').trim();
-    // 按中英文句号/问号/感叹号截断
+    // 按中英文句号/问号/感叹号截断为第一句
     const m = s.match(/^(.+?)[。.!?！？]/);
-    if (m && m[1].length > 5) return m[1] + (hasChinese(m[1]) ? '。' : '.');
-    // 没有句号，按长度截断
-    if (s.length > 35) return s.slice(0, 35) + '…';
+    if (m && m[1].length > 3) s = m[1].trim();
+    // 首页一行展示，严格限制长度
+    if (s.length > 20) return s.slice(0, 20) + '…';
     return s;
   }
 
