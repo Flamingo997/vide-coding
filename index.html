@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=old1">
+<link rel="stylesheet" href="styles.css?v=old2">
 </head>
 <body>
 
@@ -75,7 +75,6 @@
       <section class="banner" id="banner">
         <div class="slides" id="slides"></div>
         <div class="banner-bottom">
-          <div class="banner-title-wrap" id="bannerTitle"></div>
           <div class="banner-controls">
             <div class="dots" id="dots"></div>
             <div class="banner-btns">
@@ -267,7 +266,6 @@
 
     const slidesEl = document.getElementById('slides');
     const dotsEl = document.getElementById('dots');
-    const titleEl = document.getElementById('bannerTitle');
     let slideIdx = 0;
     let slideTimer = null;
 
@@ -301,19 +299,12 @@
       }
     }).join('');
 
-    function renderTitle() {
-      const n = BANNER_ITEMS[slideIdx];
-      titleEl.innerHTML = `<span class="banner-current-title">${n.title}</span>`;
-    }
-    renderTitle();
-
     dotsEl.innerHTML = BANNER_ITEMS.map((_, i) => `<span class="${i === 0 ? 'on' : ''}" data-i="${i}"></span>`).join('');
 
     function goSlide(i) {
       slideIdx = (i + BANNER_ITEMS.length) % BANNER_ITEMS.length;
       slidesEl.querySelectorAll('.slide').forEach((s, k) => s.classList.toggle('on', k === slideIdx));
       dotsEl.querySelectorAll('span').forEach((s, k) => s.classList.toggle('on', k === slideIdx));
-      renderTitle();
     }
     function startAuto() { stopAuto(); slideTimer = setInterval(() => goSlide(slideIdx + 1), 5000); }
     function stopAuto() { if (slideTimer) clearInterval(slideTimer); }
