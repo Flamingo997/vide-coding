@@ -272,7 +272,7 @@ body {
 .slide-info {
   position: absolute;
   left: 40px;
-  bottom: 80px;
+  bottom: 90px;
   right: 120px;
   z-index: 2;
   color: #fff;
@@ -328,23 +328,7 @@ body {
   transform: scale(1.08);
 }
 
-.banner-bottom {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 20px 40px 28px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  z-index: 3;
-  background: linear-gradient(to top, rgba(26, 31, 46, 0.75), transparent);
-}
-.banner-current-title {
-  font-size: 24px;
-  color: #fff;
-  font-weight: 700;
-}
+/* Banner 控件：底部左圆点右箭头 */
 .banner-controls {
   position: absolute;
   bottom: 24px;
