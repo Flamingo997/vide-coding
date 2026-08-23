@@ -153,7 +153,7 @@ body {
 @media (max-width: 1200px) {
   .nav-item.optional { display: none; }
   .nav-more { display: flex; align-items: center; }
-  .cat-grid { grid-template-columns: repeat(2, 1fr); }
+  .cat-grid { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 900px) {
   .topnav { gap: 16px; padding: 0 20px; flex-wrap: wrap; height: auto; padding-top: 12px; padding-bottom: 12px; }
@@ -161,19 +161,20 @@ body {
   .brand-name { font-size: 24px; }
   .logo { width: 42px; height: 42px; }
   .nav-item { padding: 8px 14px; font-size: 15px; }
+  .cat-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ===== 首页布局 ===== */
 .home-layout {
   display: flex;
-  gap: 56px;
+  gap: 32px;
   max-width: 1180px;
   margin: 28px auto;
   padding: 0 28px;
   align-items: flex-start;
 }
 .home-main { flex: 1 1 auto; min-width: 0; }
-.home-side { flex: 0 0 300px; position: sticky; bottom: 28px; top: 100px; align-self: flex-start; margin-left: 48px; }
+.home-side { flex: 0 0 300px; position: sticky; top: 100px; }
 
 /* 视图切换过渡动画 */
 .view-enter { animation: viewFadeIn 0.8s cubic-bezier(0.25, 0.1, 0.25, 1); }
@@ -453,12 +454,6 @@ body {
   min-height: 17px;
 }
 
-@media (max-width: 1200px) {
-  .cat-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 1000px) {
-  .cat-grid { grid-template-columns: repeat(2, 1fr); }
-}
 @media (max-width: 700px) {
   .cat-grid { grid-template-columns: 1fr; gap: 16px; }
   .banner { height: 340px; }
@@ -882,6 +877,7 @@ body {
 @media (max-width: 1100px) {
   .home-layout { flex-direction: column; }
   .home-side { position: static; width: 100%; flex: none; }
+  .cat-grid { grid-template-columns: repeat(4, 1fr); }
 }
 @media (max-width: 600px) {
   .home-layout { padding: 0 16px; margin: 16px auto; gap: 20px; }
