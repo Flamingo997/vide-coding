@@ -100,28 +100,38 @@ export async function onRequestGet(context) {
       // 2) 去掉所有已知污染片段：article id、图片URL、域名、时间戳数字
       let cleaned = line
         .replace(/^\s*[A-Za-z0-9_-]{8,20}article/, '') // 去掉前缀 id+article
-        .replace(/\/\/img\.huanqiucdn\.cn[^\s\u4e00-\u9fa5《"]*(?:jpg|png|gif|jpeg|webp)\??/gi, ' ')
+        .replace(/\/\/img\.huanqiucdn\.cn\S*(?:jpg|png|gif|jpeg|webp)\??/gi, ' ')
         .replace(/ent\.huanqiu\.com/gi, ' ')
         .replace(/\d{13,}/g, ' ')
         .replace(/[ \t]{2,}/g, ' ')
         .trim();
 
-      // 3) 提取中文标题：必须以中文/《开头，长度 6-100，结尾不要残留半角符号
-      const titleMatch = cleaned.match(/([\u4e00-\u9fa5《][\u4e00-\u9fa5A-Za-z0-9·\-—：:、，。""''《》（）()【】\s?!！？,]{5,120}?[\u4e00-\u9fa5A-Za-z0-9》）】!?？！])/);
-      if (!titleMatch) continue;
-
-      let title = titleMatch[1].trim().replace(/[.。,，、:：]+$/, '').trim();
-      if (title.length < 6 || title.length > 100) continue;
-
-      // 去掉开头残留的 .jpg .png 等
-      title = title.replace(/^(jpg|png|gif|jpeg|webp)\s*/i, '').trim();
-      if (title.length < 6) continue;
-
-      // 4) 取最新的时间戳
-      let ts = timestamps.length > 0 ? Math.max(...timestamps) : 0;
-      if (!ts && approxTsStash.length) {
-        ts = approxTsStash[approxTsStash.length - 1] - 60 * 60 * 1000; // 回退1小时
+      // 3) 提取中文标题：贪婪取最长合法片段
+      //    第一步：用贪婪匹配获取最长的"中文字符为主"的区间
+      let title = '';
+      const greedyMatch = cleaned.match(/[\u4e00-\u9fa5《][\u4e00-\u9fa5A-Za-z0-9·\-—：:、，。""''《》（）()【】\s?!！？,—\-]{5,150}[\u4e00-\u9fa5A-Za-z0-9》）】!?？！]/);
+      if (greedyMatch) {
+        title = greedyMatch[0].trim();
+      } else {
+        // 回退：匹配第一个中文字符到行尾，再手动裁剪
+        const start = cleaned.search(/[\u4e00-\u9fa5《]/);
+        if (start >= 0) {
+          title = cleaned.slice(start).trim();
+        }
       }
+      if (!title) continue;
+
+      // 二次清洗：去掉尾部残留的 半角字母/id 片段、标点
+      title = title
+        .replace(/^(jpg|png|gif|jpeg|webp)\s*/i, '')
+        .replace(/\s*[a-zA-Z0-9_-]{1,10}$/, '')
+        .replace(/[.。,，、:：]+$/, '')
+        .trim();
+
+      if (title.length < 6 || title.length > 120) continue;
+
+      // 4) 取最新的时间戳（仅当本行真的解析到时间戳时才用，否则不赋值）
+      let ts = timestamps.length > 0 ? Math.max(...timestamps) : 0;
 
       // 5) 去重 + 入队
       const key = title + '|' + ts;
@@ -134,7 +144,7 @@ export async function onRequestGet(context) {
       news.push({
         title,
         time: ts > 1e12 ? tsToRelative(ts) : '近期',
-        ts: ts || Date.now() - 3 * 24 * 3600 * 1000,
+        ts: ts > 1e12 ? ts : (approxTsStash.length ? approxTsStash[approxTsStash.length - 1] - news.length * 1800000 : Date.now() - 86400000),
         url: href ? ('https://ent.huanqiu.com' + href) : 'https://ent.huanqiu.com/film'
       });
     }
