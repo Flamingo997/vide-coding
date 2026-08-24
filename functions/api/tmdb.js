@@ -114,8 +114,8 @@ export async function onRequestGet(context) {
 
   try {
     // 双语言并行请求：zh-CN + en-US
-    // 日期过滤：放宽到 2024-01-01 确保各分类至少8部内容
-    const DATE_GTE = '2024-01-01';
+    // 日期过滤：放宽到 2023-01-01 确保各分类至少8部内容
+    const DATE_GTE = '2023-01-01';
     const DATE_LTE = '2026-12-31';
     const MOVIE_DATE_GTE = '2025-01-01';
     const MOVIE_DATE_LTE = '2026-12-31';
@@ -304,8 +304,8 @@ export async function onRequestGet(context) {
 
     // 过滤
     const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', 'Bonnie Blue', 'Doble tentación', 'Doble Tentación'];
-    // 全局日期下限：所有内容必须 >= 2024-01-01，杜绝年代久远的影片混入
-    const MIN_DATE = '2024-01-01';
+    // 全局日期下限：所有内容必须 >= 2023-01-01，杜绝年代久远的影片混入
+    const MIN_DATE = '2023-01-01';
     let list = items
       .filter(n => n.date && n.date >= MIN_DATE)   // 日期下限：2026年起
       .filter(n => n.poster)
