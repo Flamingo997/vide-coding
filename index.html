@@ -675,7 +675,7 @@
   });
   backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
-  fetch('data.json')
+  fetch('data.json?v=8')
     .then(r => r.json())
     .then(data => {
       ({ NEWS, NEWS_FLASH, POSTER_MAP, WIDE_POSTER_MAP, TYPE_MAP, EVENT_NAME, TYPE_BG, TIMES, WEEKDAYS } = data);
