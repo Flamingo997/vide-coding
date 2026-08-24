@@ -171,11 +171,53 @@
   let currentRange = 'all';
   let keyword = '';
 
-  const TODAY = new Date();
+  // ======= 统一日期工具：彻底规避 UTC 时区偏差 + NaN 污染 sort =======
+  // 1) parseYMDLocal(str): 手动拆分 Y/M/D，用本地时区 new Date(y, m-1, d) 构造
+  //    解析失败返回 null，绝不返回 Invalid Date
+  function parseYMDLocal(str) {
+    if (str === undefined || str === null) return null;
+    const s = String(str).trim();
+    if (!s) return null;
+    // 兼容: YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD / YYYYMMDD
+    const m = s.match(/^(\d{4})[-/.]?(\d{1,2})[-/.]?(\d{1,2})/);
+    if (!m) return null;
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10);
+    const d = parseInt(m[3], 10);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const dt = new Date(y, mo - 1, d, 0, 0, 0, 0);
+    // 防御非法日期（例如 2月30日）：检查反向是否匹配
+    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+    return dt;
+  }
+  // 2) parseDateTs(str): 返回「当日 00:00 本地时间戳」，解析失败返回 0
+  //    保证永远是合法数字 → sort 绝不会被 NaN 污染
+  function parseDateTs(str) {
+    const d = parseYMDLocal(str);
+    return d ? d.getTime() : 0;
+  }
+  // 3) toStdDate(str): 标准化为 'YYYY-MM-DD' 字符串，用于分组键，保证同一天不拆分多组
+  //    解析失败返回原字符串（兜底）
+  function toStdDate(str) {
+    const d = parseYMDLocal(str);
+    if (!d) return String(str || '');
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${dd}`;
+  }
+  // 今日基准：本地时区 00:00:00 的时间戳，避免时分秒影响 diffDays 计算
+  const TODAY = (() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate(), 0, 0, 0, 0);
+  })();
+  const TODAY_TS = TODAY.getTime();
+  const DAY_MS = 86400000;
 
   function inRange(dateStr, range) {
-    const d = new Date(dateStr);
-    const diffDays = Math.round((d - TODAY) / 86400000);
+    const ts = parseDateTs(dateStr);
+    if (ts === 0) return range === 'all'; // 日期无效：只有全量才显示
+    const diffDays = Math.round((ts - TODAY_TS) / DAY_MS);
     if (range === 'week')     return diffDays >= -7 && diffDays <= 0;
     if (range === 'month')    return diffDays >= -30 && diffDays <= 0;
     if (range === 'upcoming') return diffDays > 0;
@@ -183,8 +225,14 @@
   }
 
   function dayLabel(dateStr) {
-    const d = new Date(dateStr);
-    return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + WEEKDAYS[d.getDay()];
+    const d = parseYMDLocal(dateStr);
+    if (!d) return String(dateStr || '日期未知');
+    // 如果与今年不同，加上年份（跨年数据一眼可辨）
+    const sameYear = d.getFullYear() === TODAY.getFullYear();
+    const head = sameYear
+      ? ((d.getMonth() + 1) + '月' + d.getDate() + '日')
+      : (d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日');
+    return head + ' ' + WEEKDAYS[d.getDay()];
   }
 
   function pseudoBox(title, seed) {
@@ -333,14 +381,52 @@
 
   function renderTimeline(container, opt) {
     const { type = 'all', range = 'all', keyword: kw = '', limit = 0 } = opt;
-    let filtered = NEWS.filter(n => {
-      const typeOk = type === 'all' || n.type === type;
-      const rangeOk = inRange(n.date, range);
-      const kwOk = !kw || n.title.includes(kw) || n.summary.includes(kw);
+    // ========== 第1步：过滤 + 为每条预计算时间戳（避免 sort 里重复解析） ==========
+    const withTs = NEWS.map(n => ({
+      n,
+      ts: parseDateTs(n.date),            // 数字：合法=当日0点时间戳；无效=0
+      std: toStdDate(n.date),             // 字符串：YYYY-MM-DD 标准化分组键
+      invalid: !parseYMDLocal(n.date)     // true=日期解析失败（方便日志和统计）
+    }));
+    let filtered = withTs.filter(o => {
+      const { n: item } = o;
+      const typeOk = type === 'all' || item.type === type;
+      const rangeOk = inRange(item.date, range);
+      const kwOk = !kw || item.title.includes(kw) || item.summary.includes(kw);
       return typeOk && rangeOk && kwOk;
-    }).sort((a, b) => new Date(b.date) - new Date(a.date));
+    });
+    // ========== 第2步：排序（核心修复！用纯数值 ts 比较 → 永远不会产生 NaN） ==========
+    // 降序：ts 大（新）的在上，ts 小（旧）的在下；无效日期（ts=0）统一沉到最底部
+    // 如果日期相同，再按 NEWS 原始索引排（保证同一日内顺序稳定）
+    const origIdx = new Map(NEWS.map((n, i) => [n, i]));
+    filtered.sort((a, b) => {
+      if (a.ts !== b.ts) return b.ts - a.ts;
+      const ia = origIdx.get(a.n) ?? 0;
+      const ib = origIdx.get(b.n) ?? 0;
+      return ib - ia;
+    });
 
     if (limit > 0) filtered = filtered.slice(0, limit);
+
+    // ========== 控制台排错日志：前 15 条 原date → 解析时间戳 → 标准日期 ==========
+    // 解析失败的条目用 [DATE_INVALID] 高亮，用户一眼定位
+    if (filtered.length > 0) {
+      console.group('[时间轴排序调试] type=' + type + ' range=' + range + ' 共' + filtered.length + '条');
+      filtered.slice(0, 15).forEach((o, i) => {
+        const flag = o.invalid ? '%c[DATE_INVALID]%c' : '';
+        const args = o.invalid ? ['color:white;background:#d33;padding:1px 6px;border-radius:3px', ''] : [];
+        const datePart = o.invalid
+          ? ` date="${o.n.date}"`
+          : ` date="${o.n.date}" std=${o.std} ts=${o.ts}`;
+        console.log.apply(console, [`  #${i + 1}${flag}${datePart}  ${o.n.title}`, ...args]);
+      });
+      const invCount = filtered.filter(o => o.invalid).length;
+      if (invCount > 0) {
+        console.log('%c⚠ 有 ' + invCount + ' 条日期解析失败（已沉底），请检查 TMDB 接口返回的 date 字段格式',
+          'color:#b35900;background:#fff4e5;padding:4px 8px;border-radius:4px');
+      }
+      console.groupEnd();
+    }
 
     if (filtered.length === 0) {
       container.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
@@ -348,31 +434,38 @@
       return;
     }
 
+    // ========== 第3步：按标准化日期分组（同一天的不拆组） ==========
     const groups = [];
-    filtered.forEach(n => {
+    filtered.forEach(o => {
       const last = groups[groups.length - 1];
-      if (last && last.date === n.date) last.items.push(n);
-      else groups.push({ date: n.date, items: [n] });
+      if (last && last.stdDate === o.std) last.items.push(o);
+      else groups.push({ stdDate: o.std, rawDate: o.n.date, items: [o] });
     });
 
     container.innerHTML = groups.map(g => `
       <section class="day-group">
-        <h2 class="day-head">${dayLabel(g.date)}</h2>
-        ${g.items.map(n => {
+        <h2 class="day-head">${dayLabel(g.rawDate)}</h2>
+        ${g.items.map(o => {
+          const n = o.n; // 从包装对象里取出原始条目
           const t = TYPE_MAP[n.type];
           if (!t) return '';
-          const time = TIMES[NEWS.indexOf(n) % TIMES.length];
+          const time = TIMES[(origIdx.get(n) ?? 0) % TIMES.length];
           const nodeCls = 'tl-node';
           const elId = titleToId(n.title);
+          const safeTitle = n.title.replace(/"/g, '&quot;');
+          // 日期解析失败的条目加小标红提示（可选，让用户肉眼看到格式有问题的卡片）
+          const invalidBadge = o.invalid
+            ? `<span style="font-size:11px;color:#fff;background:#d33;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle">日期异常</span>`
+            : '';
           return `
-            <div class="tl-item" style="--tc:${t.color}" id="${elId}" data-title="${n.title.replace(/"/g, '&quot;')}">
+            <div class="tl-item" style="--tc:${t.color}" id="${elId}" data-title="${safeTitle}">
               <div class="${nodeCls}"></div>
               <article class="card" onclick="toggleCard(this)">
                 <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy"></div>
                 <div class="card-main">
                   <div class="card-top">
                     <span class="card-time">${time} · ${EVENT_NAME[n.event]}</span>
-                    <span class="tag-solid">${t.name}</span>
+                    <span class="tag-solid">${t.name}${invalidBadge}</span>
                   </div>
                   <h3 class="card-title">${n.title}<span class="detail-hint">点击卡片展开详情</span></h3>
                   <p class="card-summary">${n.summary}</p>
@@ -436,8 +529,9 @@
     const order = ['movie', 'drama', 'show', 'anime', 'duan', 'doc'];
     document.getElementById('catGroups').innerHTML = order.map(type => {
       const t = TYPE_MAP[type];
+      // 首页卡片同样用 parseDateTs 数值排序 → 永不 NaN，日期新的在前，无效日期沉底
       const items = NEWS.filter(n => n.type === type)
-        .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
+        .sort((a, b) => parseDateTs(b.date) - parseDateTs(a.date)).slice(0, 8);
       if (!items.length) return '';
       return `
         <section class="block cat-group">
