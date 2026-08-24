@@ -385,63 +385,201 @@
   };
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
-  function oneLineSummary(text, title) {
+  function oneLineSummary(text, title, type) {
     if (!text || text.length < 2) {
-      console.log('[简介生成] 跳过: 空文本', '|| title=', title);
+      console.log('[简介生成] 跳过: 空文本', '|| title=', title, '|| type=', type);
       return '暂无简介';
     }
     let s = text.replace(/^《.+?》/, '').trim();
     s = s.replace(/[（(].+?[)）]/g, '').trim();
     s = s.replace(/^(本剧|本片|该剧|该影片|影片|故事)?(讲述(了)?|描绘(了)?|展现(了)?|记录(了)?)?/, '');
     const clauses = s.split(/[，,。.！!？?；;]/).map(c => c.trim()).filter(c => c);
-    console.log('[简介生成] 原文:', text.slice(0, 40) + '…', '|| 去杂后:', s.slice(0, 40) + '…', '|| 分句数:', clauses.length, '|| title=', title);
+    console.log('[简介生成] 原文:', text.slice(0, 40) + '…', '|| 去杂后:', s.slice(0, 40) + '…', '|| 分句数:', clauses.length, '|| title=', title, '|| type=', type);
 
-    // 动作动词表：出现这些词的分句更可能是核心剧情句
-    const ACTION_WORDS = ['演绎','共破','探秘','上演','集结','坐镇','结伴','慢游','交锋','探索','归来','开启','遭遇','改写','奇遇','野翻','翻盘','带队','揭开','狂飙','繁花','流浪','飞驰','热辣','漫画','逆行','乘风','重启','追光','寻梦','破局','追凶','缉毒','卧底','告白','回归','上线','开播','首映','定档','独播','全景','记录','见证','呈现'];
-    // 背景/评价开头模式：这类分句优先级低
-    const BG_PATTERNS = [/^.{1,6}之[上下中内]/, /^.{1,6}案$/, /^.{1,10}力作/, /^.{1,6}集结$/, /^.{1,6}归来$/, /^历时.{1,6}/, /^重走/, /^毕业之夏/, /^盛唐/, /^深海/, /^家庭秘密/, /^水彩画风/, /^水墨国风/, /^星际远征/, /^契约婚姻/, /^重返90/, /^人机对决/, /^黄渤.{0,4}结伴/, /^原创音乐人/, /^张译黄景瑜/, /^文牧野/];
+    // ========== 分类专属动作词表（用于 type 感知加权） ==========
+    // 综艺专属：出现这些词且 type==='show' 时，额外 +25 分/词
+    const SHOW_ACTION_WORDS = [
+      '嘉宾','导师','选手','队长','团员','主持人','评委','飞行嘉宾','常驻嘉宾',
+      '分队','组队','比赛','竞技','挑战','淘汰','晋级','决赛','冠军','夺冠','投票','评分','打分','排名','角逐','获胜',
+      '公演','舞台','表演','演唱','跳舞','说唱','游戏','任务','录制','参赛',
+      '恋爱','约会','相亲','旅行','合租','做饭','美食','爆笑','畅聊','互动','同台','搭档','携手','对决','对抗','比拼'
+    ];
+    // 动漫专属：出现这些词且 type==='anime' 时，额外 +25 分/词
+    const ANIME_ACTION_WORDS = [
+      '转生','穿越','异世界','觉醒','进化','变身','召唤','契约','魔法','灵力','斗气','封印','解除','技能','能力','法术','剑术',
+      '战斗','激战','死斗','讨伐','击败','灭杀','守护','保卫','反击','偷袭','决战',
+      '冒险','之旅','旅途','征途','探索','寻找','追寻','潜入','逃亡','逃脱','被困','荒岛',
+      '成长','蜕变','突破','超越','变强','踏上','崛起','逆袭','称霸','修炼','试炼',
+      '邂逅','相遇','结伴','师徒','伙伴','同伴','战友','宿敌','并肩','友谊','信任','勇气',
+      '生存','家园','摧毁','陆地','渡过','险境','化解','冲破','唤醒','危机'
+    ];
+    // 通用剧情动作词（所有分类共享，命中 +35 分/词）
+    const ACTION_WORDS = [
+      '演绎','共破','探秘','上演','带队','揭开','狂飙','告白','回归','开启','遭遇','改写','奇遇','翻盘','交锋','探索','归来','缉毒','卧底','乘风','重启','追光','寻梦','破局','追凶','逆行','拯救','复仇','阴谋','真相','秘密','呈现','治愈','暖心','加盟','生活','装修','翻新','承担','不退','退缩'
+    ];
+    // 背景/评价开头模式：这类分句优先级低（综艺定义/动漫世界观/制作评价/人事介绍）
+    const BG_PATTERNS = [
+      // 通用背景模式
+      /^.{1,6}之[上下中内]/, /^.{1,6}案$/, /^.{1,10}力作/, /^.{1,6}集结$/, /^.{1,6}归来$/, /^历时.{1,6}/, /^重走/, /^毕业之夏/, /^盛唐/, /^深海/, /^家庭秘密/, /^水彩画风/, /^水墨国风/, /^星际远征/, /^契约婚姻/, /^重返90/, /^人机对决/, /^黄渤.{0,4}结伴/, /^原创音乐人/, /^张译黄景瑜/, /^文牧野/,
+      // ========== 综艺专属背景模式：定义/来源/宗旨/人事/档期 ==========
+      /^《.+?》是.+?(节目|综艺|秀|栏目|真人秀|选秀|棚内|周播|黄金档|卫视|打造|推出|首播)/,
+      /^本片是一个.+?(综艺|喜剧节目|节目)/,
+      /^节目致力[于以]/,
+      /^节目(将|会|计划|正式|火热|全新|重磅)/,
+      /^这档.+?节目(移植自|源自|引进)/,
+      /^由.+?(担任|出任|坐镇)(导师|主持|评委)/,
+      /^包括.{1,15}(固定成员|常驻嘉宾|MC)/,
+      /^固定(嘉宾|成员|主持)/,
+      /^前成员|^原成员/,
+      /^\d{4}年\d{1,2}月\d{1,2}日/,
+      /^经纪公司表示/,
+      /^成员.+?因(身体|个人发展|学业)/,
+      /^成员.+?将录制完最后一期/,
+      /^本季(节目)?/,
+      /^每期.{0,10}(邀请|请来|迎来|集结)/,
+      /^第[一二三四五六七八九十百千\d]+(季|期|集|弹)/,
+      /^由.+?(出品|制作|独家|冠名|赞助)/,
+      /^改编自.+?(综艺|节目|IP)/,
+      /^每周.{0,6}(播出|更新|上线|放送)/,
+      // ========== 动漫专属背景模式：时间/世界观/人设/评价/制作/改编 ==========
+      /^公元\s*\d+/,
+      /^人类文明高度发展/,
+      /^这是一段关于/,
+      /^这部荣(获|斩获|膺)/,
+      /^将独立动画/,
+      /^故事(就)?(发生|设定|展开)在/,
+      /^故事的主角.{0,8}是个?/,
+      /^家里有一个/,
+      /^吵闹的父子/,
+      /^懂事的妹妹/,
+      /^\d+岁.{0,8}(童贞|无职|家里蹲|尼特|死宅)/,
+      /^凭借开源软件/,
+      /^富有远见的独立动画师/,
+      /^营造了一场绝妙的感官/,
+      /^深刻沉思了/,
+      /^将.+?创作雄心与想象力/,
+      /^在(遥远|很久|远古|未来|架空|平行).{0,10}(时代|世界|大陆|星球|宇宙|国度|次元)/,
+      /^传说(中|里|很久以前)/,
+      /^某(个|天|日|次)/,
+      /^从(小|大|前|来|出生|懂事)/,
+      /^作为.{0,10}的(他|她|它|主角|少年|少女|青年|孩子)/,
+      /^(由于|因为|为了).+?(缘故|原因|目的)/,
+      /^(经过|历经|通过|凭借).+?(的|地)(努力|修炼|战斗|坚持)/,
+      /^世界观/,
+      /^改编自.{0,10}(漫画|轻小说|小说|游戏|原作)/,
+      /^原作.{0,6}(累计|销量|发行|突破)/,
+      /^(荣获|获得|斩获|包揽).+?(奖|奖项|提名|荣誉)/,
+      /^导演.{0,6}(执导|作品|代表作)/,
+      /^本作.{0,6}(以|将|通过|采用)/
+    ];
 
-    function scoreClause(t, idx) {
+    // 判断分句是否以英文为主：只有英文字母数量明显多于中文字符时才按英文处理
+    // 中英文混合（如《Kelly Clarkson》、人名、品牌名）仍按中文分句长度限制（≤22字）
+    function hasAscii(s) {
+      const zhCount = (s.match(/[\u4e00-\u9fa5]/g) || []).length;
+      const enCount = (s.match(/[a-zA-Z]/g) || []).length;
+      if (enCount === 0) return false;
+      // 英文为主：英文字符 ≥ 中文字符 × 2（且总英文字符≥10）
+      return enCount >= zhCount * 2 && enCount >= 10;
+    }
+
+    function scoreClause(t, idx, type) {
       let score = 0;
-      // 长度合适（4-18字）
-      const lenOk = t.length >= 4 && t.length <= 18;
+      // 长度合适：中文放宽到22字保留完整剧情句；英文放宽到160字符
+      const isEnglish = hasAscii(t);
+      const minLen = isEnglish ? 12 : 4;
+      const maxLen = isEnglish ? 160 : 22;
+      const lenOk = t.length >= minLen && t.length <= maxLen;
       if (!lenOk) return -1000;
       score += 10;
-      // 包含动作动词，大幅加分
+      // ======= 通用动作词命中：+35/词 =======
+      let hits = 0;
       for (const w of ACTION_WORDS) {
-        if (t.includes(w)) { score += 30; break; }
+        if (t.includes(w)) { hits++; if (hits >= 6) break; }
       }
-      // 背景/评价模式，扣分
+      if (hits > 0) score += hits * 35;
+      // ======= 分类专属动作词加权（type 匹配才生效）：+25/词 =======
+      // 综艺专属：嘉宾互动/竞技/舞台/情感生活类词，命中后与通用词叠加
+      if (type === 'show') {
+        let sHits = 0;
+        for (const w of SHOW_ACTION_WORDS) {
+          if (t.includes(w)) { sHits++; if (sHits >= 5) break; }
+        }
+        if (sHits > 0) score += sHits * 25;
+      }
+      // 动漫专属：奇幻/战斗/冒险/成长/羁绊类词，命中后与通用词叠加
+      if (type === 'anime') {
+        let aHits = 0;
+        for (const w of ANIME_ACTION_WORDS) {
+          if (t.includes(w)) { aHits++; if (aHits >= 5) break; }
+        }
+        if (aHits > 0) score += aHits * 25;
+      }
+      // ======= 背景/定义/评价模式：强扣分（-40），压过单个动作词 =======
       for (const p of BG_PATTERNS) {
-        if (p.test(t)) { score -= 15; break; }
+        if (p.test(t)) { score -= 40; break; }
       }
-      // 非首分句轻微加分（原文后半句往往是核心剧情）
-      if (idx > 0) score += 5;
+      // ======= 非首分句：综艺/动漫结构多为"背景在前→剧情在后"，后半句强烈加权 =======
+      if (idx === 1) score += 10;
+      if (idx === 2) score += 18;
+      if (idx >= 3) score += 24;
+      // 综艺/动漫类型：后半句额外再加分，强化"背景在前剧情在后"的选句倾向
+      if ((type === 'show' || type === 'anime') && idx >= 1) score += 10;
+      // 英文分句：非首句额外鼓励
+      if (isEnglish && idx > 0) score += 8;
       return score;
     }
 
     let best = null, bestScore = -Infinity;
     for (let i = 0; i < clauses.length; i++) {
       const t = clauses[i];
-      const sc = scoreClause(t, i);
+      const sc = scoreClause(t, i, type);
       const hit = sc >= 0;
-      console.log('  [分句' + i + '] len=' + t.length + ' score=' + sc + ' "' + t + '"' + (hit ? ' ✓候选' : ''));
-      if (sc > bestScore) {
+      // 调试：列出该分句命中的动作词（通用+分类专属）
+      const hitWords = [];
+      for (const w of ACTION_WORDS) if (t.includes(w)) hitWords.push(w);
+      if (type === 'show') for (const w of SHOW_ACTION_WORDS) if (t.includes(w) && !hitWords.includes(w)) hitWords.push(w+'[S]');
+      if (type === 'anime') for (const w of ANIME_ACTION_WORDS) if (t.includes(w) && !hitWords.includes(w)) hitWords.push(w+'[A]');
+      const hitBg = BG_PATTERNS.some(p => p.test(t));
+      console.log('  [分句' + i + '] len=' + t.length + ' score=' + sc + ' hits=[' + hitWords.join(',') + ']' + (hitBg ? ' BG-40' : '') + ' "' + t + '"' + (hit ? ' ✓候选' : ''));
+      // 同分或更高都刷新：越靠后（剧情核心）优先覆盖靠前的背景句
+      if (sc >= bestScore) {
         bestScore = sc;
         best = t;
       }
     }
 
     if (best && bestScore >= 0) {
-      console.log('  [最终命中] "' + best + '"', '|| title=', title);
-      return best;
+      // 最终分句清理：去除不通顺的前后缀、标点残留与补充分句残渣
+      let cleaned = best
+        // 第一步：去掉破折号/冒号/引号后半的补充说明（只保留核心主句）
+        // 如"从懵懂走向承担——不是成为英雄" → "从懵懂走向承担"
+        // 如"成长寓言：荒原即内心，梦境即试炼" → "成长寓言"
+        .replace(/\s*[—\-–：:].*$/, '')
+        // 前缀连接词/副词（剧情句之前的铺垫连接词）
+        .replace(/^(当然也还有|与此同时|的同时|后被派往|并且|却|还|然后|此外|直到|最后|最终|于是|从此|这时|至此|而|但|并|在|时|对|将|把|被|让|使|给|向|跟|同|和|与|及|以及)\s*/, '')
+        // 前缀标点残渣（分句拆分留下的引号、括号、书名号、问号尾巴等，如"时漫画的序幕"来自"…？时漫画…"）
+        .replace(/^[^a-zA-Z\u4e00-\u9fa50-9]+/, '')
+        // 多个连续破折号/横线开头
+        .replace(/^[—\-–_]{1,}\s*/, '')
+        // 后缀"的同时"等无意义收尾
+        .replace(/\s*(的同时|的过程|之后|之前|之时|期间|中)$/, '')
+        // 后缀标点残渣
+        .replace(/[^a-zA-Z\u4e00-\u9fa50-9]+$/, '')
+        .trim();
+      // 如果清理后过短，保留清理前版本
+      if (cleaned.length < 4) cleaned = best.trim();
+      console.log('  [最终命中] "' + cleaned + '"' + (cleaned !== best.trim() ? '（清理自："'+best+'"）' : ''), '|| title=', title);
+      return cleaned;
     }
 
     // 兜底逻辑
     let first = (clauses[0] || s).trim();
-    if (first.length > 18) {
-      console.log('  [兜底] 第一句超18字，截断:', first.slice(0, 18) + '…', '|| title=', title);
-      return first.slice(0, 18) + '…';
+    const maxFinalLen = hasAscii(first) ? 160 : 22;
+    if (first.length > maxFinalLen) {
+      const cut = first.slice(0, maxFinalLen);
+      console.log('  [兜底] 第一句超'+maxFinalLen+'字，截断:', cut + '…', '|| title=', title);
+      return cut + '…';
     }
     console.log('  [兜底] 使用第一句:', first || '(空)', '|| title=', title);
     return first || '暂无简介';
@@ -462,7 +600,7 @@
           <div class="cat-grid">
             ${items.map(n => {
               const cleanTitle = n.title.replace(/》.*$/, '》');
-              const desc = oneLineSummary(n.summary, n.title);
+              const desc = oneLineSummary(n.summary, n.title, type);
               return `
               <div class="cat-card" data-type="${type}">
                 <div class="cat-poster-wrap">
