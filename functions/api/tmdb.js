@@ -109,14 +109,26 @@ export async function onRequestGet(context) {
 
   try {
     // 双语言并行请求：zh-CN + en-US
+    // 日期过滤：first_air_date.gte=2026-06-01 确保只返回2026年6月后开播的内容
+    const DATE_GTE = '2026-06-01';
+    const DATE_LTE = '2026-12-31';
+    const MOVIE_DATE_GTE = '2026-06-01';
+    const MOVIE_DATE_LTE = '2026-12-31';
+
     const [
       nowPlayingZh, nowPlayingEn,
       upcomingZh, upcomingEn,
       onAirZh, onAirEn,
-      tvPopularZh, tvPopularEn,
-      docMoviesZh, docMoviesEn,
-      docTvZh, docTvEn,
+      // 电视剧（drama）：按日期过滤的 discover 替代旧的 tv/popular
+      dramaDiscoverZh, dramaDiscoverEn,
+      // 动漫（anime）：新增专属 discover 请求
+      animeDiscoverZh, animeDiscoverEn,
+      // 综艺（show）：加日期过滤
       showZh, showEn,
+      // 纪录片电影（doc）：加日期过滤
+      docMoviesZh, docMoviesEn,
+      // 纪录片剧集（doc）：加日期过滤
+      docTvZh, docTvEn,
       movieGenres, tvGenres
     ] = await Promise.all([
       tmdb('/movie/now_playing?region=CN&page=1', key, 'zh-CN'),
@@ -125,14 +137,21 @@ export async function onRequestGet(context) {
       tmdb('/movie/upcoming?region=CN&page=1', key, 'en-US'),
       tmdb('/tv/on_the_air?page=1', key, 'zh-CN'),
       tmdb('/tv/on_the_air?page=1', key, 'en-US'),
-      tmdb('/tv/popular?page=1', key, 'zh-CN'),
-      tmdb('/tv/popular?page=1', key, 'en-US'),
-      tmdb('/discover/movie?with_genres=99&sort_by=popularity.desc&page=1', key, 'zh-CN'),
-      tmdb('/discover/movie?with_genres=99&sort_by=popularity.desc&page=1', key, 'en-US'),
-      tmdb('/discover/tv?with_genres=99&sort_by=popularity.desc&page=1', key, 'zh-CN'),
-      tmdb('/discover/tv?with_genres=99&sort_by=popularity.desc&page=1', key, 'en-US'),
-      tmdb('/discover/tv?with_genres=10764&sort_by=popularity.desc&page=1', key, 'zh-CN'),
-      tmdb('/discover/tv?with_genres=10764&sort_by=popularity.desc&page=1', key, 'en-US'),
+      // 电视剧：genre 10766(剧情) 10765(肥皂)，日期>=2026-06-01
+      tmdb(`/discover/tv?with_genres=10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 动漫：genre 16(动画)，日期>=2026-06-01
+      tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 综艺：genre 10764(真人秀) 10767(脱口秀)，日期>=2026-06-01
+      tmdb(`/discover/tv?with_genres=10764,10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=10764,10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 纪录片电影：genre 99，日期>=2026-06-01
+      tmdb(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 纪录片剧集：genre 99，日期>=2026-06-01
+      tmdb(`/discover/tv?with_genres=99&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=99&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
       tmdb('/genre/movie/list', key, 'zh-CN'),
       tmdb('/genre/tv/list', key, 'zh-CN')
     ]);
@@ -148,7 +167,8 @@ export async function onRequestGet(context) {
 
     const enTvMap = new Map();
     (onAirEn.results || []).forEach(s => enTvMap.set(s.id, s));
-    (tvPopularEn.results || []).forEach(s => enTvMap.set(s.id, s));
+    (dramaDiscoverEn.results || []).forEach(s => enTvMap.set(s.id, s));
+    (animeDiscoverEn.results || []).forEach(s => enTvMap.set(s.id, s));
     (docTvEn.results || []).forEach(s => enTvMap.set(s.id, s));
     (showEn.results || []).forEach(s => enTvMap.set(s.id, s));
 
@@ -220,9 +240,15 @@ export async function onRequestGet(context) {
       });
     });
 
-    // 正在播出 + 热门剧集
+    // 正在播出 + 各分类 discover 结果（电视剧/动漫/综艺/纪录片）
     const tvSeen = new Set();
-    [...(onAirZh.results || []), ...(tvPopularZh.results || []), ...(showZh.results || [])].forEach(s => {
+    const allTvResults = [
+      ...(onAirZh.results || []),
+      ...(dramaDiscoverZh.results || []),
+      ...(animeDiscoverZh.results || []),
+      ...(showZh.results || [])
+    ];
+    allTvResults.forEach(s => {
       if (tvSeen.has(s.id)) return;
       tvSeen.add(s.id);
       const en = enTvMap.get(s.id) || {};
@@ -273,8 +299,10 @@ export async function onRequestGet(context) {
 
     // 过滤
     const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', 'Bonnie Blue', 'Doble tentación', 'Doble Tentación'];
+    // 全局日期下限：所有内容必须 >= 2026-01-01，杜绝年代久远的影片混入
+    const MIN_DATE = '2026-01-01';
     let list = items
-      .filter(n => n.date)
+      .filter(n => n.date && n.date >= MIN_DATE)   // 日期下限：2026年起
       .filter(n => n.poster)
       .filter(n => !BLOCK_TITLES.some(bt => n.title.includes(bt)))
       .filter(n => !BLOCK_TITLES.some(bt => (n.summary || '').includes(bt)))
