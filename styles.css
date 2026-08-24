@@ -388,7 +388,7 @@ body {
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
 }
-.cat-card { cursor: pointer; }
+.cat-card { cursor: pointer; min-width: 0; }
 .cat-poster-wrap {
   position: relative;
   border-radius: 12px;
