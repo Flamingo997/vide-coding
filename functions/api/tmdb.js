@@ -90,7 +90,7 @@ function mapShow(zhItem, enItem, genreNames) {
     type,
     event: isUpcoming ? 'schedule' : 'online',
     status: isUpcoming ? 'pending' : 'done',
-    title: isUpcoming ? `《${title}》定档${fmtDate(airDate)}` : `《${title}》热播中`,
+    title: `《${title}》`,
     summary: zhSummary(overview),
     source: 'TMDB',
     sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
@@ -198,7 +198,7 @@ export async function onRequestGet(context) {
         type,
         event: 'online',
         status: 'done',
-        title: `《${title}》正在热映`,
+        title: `《${title}》`,
         summary: zhSummary(overview),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
@@ -231,7 +231,7 @@ export async function onRequestGet(context) {
         type,
         event: isPast ? 'online' : 'schedule',
         status: isPast ? 'done' : 'pending',
-        title: isPast ? `《${title}》正在热映` : `《${title}》定档${fmtDate(m.release_date || en.release_date)}`,
+        title: `《${title}》`,
         summary: zhSummary(overview),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
@@ -277,7 +277,7 @@ export async function onRequestGet(context) {
         type: 'doc',
         event: 'online',
         status: 'done',
-        title: `《${title}》纪录电影热映`,
+        title: `《${title}》`,
         summary: zhSummary(overview),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
@@ -297,7 +297,7 @@ export async function onRequestGet(context) {
       const item = mapShow(s, en, tg);
       if (item) {
         item.type = 'doc';
-        item.title = `《${pickTitle(s, en, false)}》纪录片热播中`;
+        item.title = `《${pickTitle(s, en, false)}》`;
         items.push(item);
       }
     });

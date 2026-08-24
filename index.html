@@ -209,6 +209,29 @@
     const dd = String(d.getDate()).padStart(2, '0');
     return `${y}-${mo}-${dd}`;
   }
+  // 清理标题中的状态后缀：去掉“》定档XX”“》开播”“》公映”“》独播”“》热映”“》热播”“》上映”“》全集上映”“》正在热映”等，保留“》第二季/剧场版/番外篇”等合法标题后缀
+  function cleanBannerTitle(raw) {
+    if (!raw) return raw;
+    const s = String(raw).trim();
+    const closeIdx = s.lastIndexOf('》');
+    if (closeIdx === -1) return s;
+    const left = s.slice(0, closeIdx + 1);
+    let right = s.slice(closeIdx + 1);
+    const m = right.search(/(定档|开播|公映|独播|全国公映|正在热映|全集上映|热映中|热播中|纪录电影|纪录片|首播|热映|热播|上映|进行中|独播|上线)/);
+    if (m > -1) right = right.slice(0, m);
+    return (left + right).trim();
+  }
+  // 文本截断到 maxLen（默认 200）字符，超过加省略号；保留中文引号、标点完整性
+  function truncateText(text, maxLen = 200) {
+    if (!text) return '暂无简介';
+    const t = String(text).trim();
+    if (t.length <= maxLen) return t;
+    // 去掉末尾悬空的标点前半部分，再补省略号
+    let cut = t.slice(0, maxLen).trimEnd();
+    // 如果末尾是“「『“（(【《”这类开引号，去掉避免半配对
+    cut = cut.replace(/[「『“(\[《]$/, '').trimEnd();
+    return cut + '…';
+  }
   // 今日基准：本地时区 00:00:00 的时间戳，避免时分秒影响 diffDays 计算
   const TODAY = (() => {
     const n = new Date();
@@ -318,13 +341,14 @@
       .map(n => {
         const poster = n.poster || POSTER_MAP[n.title];
         const wide = n.widePoster || WIDE_POSTER_MAP[n.title] || null;
-        const cleanTitle = n.title.replace(/》定档.*$/, '》');
+        const cleanTitle = cleanBannerTitle(n.title);
+        const cleanSummary = truncateText(n.detail?.intro || n.summary, 200);
         return {
           title: cleanTitle,
           poster,
           wide,
           type: n.type,
-          summary: n.detail?.intro || n.summary,
+          summary: cleanSummary,
           color: TYPE_MAP[n.type].color
         };
       });
@@ -478,14 +502,14 @@
                     <span class="card-time">${time} · ${EVENT_NAME[n.event]}</span>
                     <span class="tag-solid">${t.name}${invalidBadge}</span>
                   </div>
-                  <h3 class="card-title">${n.title}<span class="detail-hint">点击卡片展开详情</span></h3>
-                  <p class="card-summary">${n.summary}</p>
+                  <h3 class="card-title">${cleanBannerTitle(n.title)}<span class="detail-hint">点击卡片展开详情</span></h3>
+                  <p class="card-summary">${truncateText(n.summary, 200)}</p>
                   <div class="card-foot">
                     <span class="source">来源：${n.source}</span>
                     <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 →</a>
                   </div>
                   <div class="detail">
-                    <p>${n.detail.intro}</p>
+                    <p>${truncateText(n.detail.intro, 200)}</p>
                     <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
                     <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
                     <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
