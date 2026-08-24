@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=old10">
+<link rel="stylesheet" href="styles.css?v=old11">
 </head>
 <body>
 
@@ -385,6 +385,14 @@
   };
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
+  function oneLineSummary(text) {
+    if (!text || text.length < 2) return '暂无简介';
+    let s = text.replace(/^《.+?》/, '').trim();
+    const m = s.match(/^(.+?)[。.!?！？]/);
+    if (m && m[1].length > 3) s = m[1].trim();
+    if (s.length > 22) return s.slice(0, 22) + '…';
+    return s;
+  }
   function renderCatGroups() {
     const order = ['movie', 'drama', 'show', 'anime', 'duan', 'doc'];
     document.getElementById('catGroups').innerHTML = order.map(type => {
@@ -399,17 +407,20 @@
             <a class="more-link" data-type="${type}">查看更多 →</a>
           </div>
           <div class="cat-grid">
-            ${items.map(n => `
+            ${items.map(n => {
+              const cleanTitle = n.title.replace(/》.*$/, '》');
+              const desc = oneLineSummary(n.summary);
+              return `
               <div class="cat-card" data-type="${type}">
                 <div class="cat-poster-wrap">
                   <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
-                  <span class="cat-badge" style="background:${t.color}">${EVENT_NAME[n.event]}</span>
                 </div>
                 <div class="cat-card-info">
-                  <div class="cat-card-title">${n.title}</div>
-                  <div class="cat-card-desc">${n.summary}</div>
+                  <div class="cat-card-title">${cleanTitle}</div>
+                  <div class="cat-card-desc">${desc}</div>
                 </div>
-              </div>`).join('')}
+              </div>`;
+            }).join('')}
           </div>
         </section>`;
     }).join('');
