@@ -45,13 +45,22 @@ async function fetchHoshiyomi(apiKey, platform, endpoint, lang) {
         'X-API-Key': apiKey,
         'User-Agent': UA,
         'Accept': 'application/json'
-      },
-      cf: { cacheTtl: 600, cacheEverything: true }
+      }
     });
     if (!r.ok) return [];
     const j = await r.json();
-    // HOSHIYOMI 返回格式：{ items: [...] } 或 { data: [...] }
-    const arr = j && (j.items || j.data);
+    // HOSHIYOMI 可能返回多种格式：
+    //   { items: [...] } / { data: [...] }
+    //   { success: true, data: { items: [...] } } / { result: [...] }
+    let arr = null;
+    if (Array.isArray(j)) arr = j;
+    else if (j) {
+      if (Array.isArray(j.items)) arr = j.items;
+      else if (Array.isArray(j.data)) arr = j.data;
+      else if (Array.isArray(j.result)) arr = j.result;
+      else if (j.data && Array.isArray(j.data.items)) arr = j.data.items;
+      else if (j.result && Array.isArray(j.result.items)) arr = j.result.items;
+    }
     return Array.isArray(arr) ? arr : [];
   } catch (e) {
     return [];
