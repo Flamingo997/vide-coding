@@ -694,19 +694,30 @@
     };
     renderFlash(NEWS_FLASH);
 
-    // 异步请求环球网·环球影讯真实资讯
-    fetch('/api/huanqiu')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data && data.code === 0 && Array.isArray(data.news) && data.news.length > 0) {
-          renderFlash(data.news);
-          // 同时更新底部数据来源描述
-          const srcEl = document.querySelector('.news-side-card .news-source');
-          if (srcEl) srcEl.textContent = '数据来源：' + (data.source || '环球网·环球影讯');
-          adjustSideSpacer();
+    // 从 /api/huanqiu 拉取最新影讯（环球网官方 JSON 接口，3分钟缓存）
+    let lastFlashHash = '';
+    async function loadFlashData({ silent = false } = {}) {
+      try {
+        const r = await fetch('/api/huanqiu');
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data && (data.code === 0 || data.code === 206) && Array.isArray(data.news) && data.news.length > 0) {
+          // 内容有变化时才重新渲染，避免 DOM 抖动
+          const hash = data.news.slice(0, 10).map(n => `${n.title}|${n.ts}`).join('||');
+          if (hash !== lastFlashHash) {
+            lastFlashHash = hash;
+            renderFlash(data.news);
+            const srcEl = document.querySelector('.news-side-card .news-source');
+            if (srcEl) srcEl.textContent = '数据来源：' + (data.source || '环球网·环球影讯');
+            adjustSideSpacer();
+          }
         }
-      })
-      .catch(() => {});
+      } catch (_) { /* 静默失败，下次轮询重试 */ }
+    }
+    // 首次立即加载
+    loadFlashData();
+    // 之后每 5 分钟自动刷新一次（环球网缓存 3 分钟，取略大于缓存时间即可）
+    setInterval(() => loadFlashData({ silent: true }), 5 * 60 * 1000);
 
     adjustSideSpacer();
   }
