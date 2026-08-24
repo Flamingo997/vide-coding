@@ -299,11 +299,19 @@
     }
   });
 
-  // ============ 轮播 Banner ============
+  // ============ 轮播 Banner：每个分类各取最新1条 ============
   function initBanner() {
-    const BANNER_ITEMS = NEWS
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .slice(0, 6)
+    // 按分类各取最新的1条，确保 Banner 覆盖所有分类
+    const BANNER_TYPES = ['movie', 'drama', 'show', 'anime', 'doc', 'duan'];
+    const BANNER_ITEMS = BANNER_TYPES
+      .map(type => {
+        // 该分类按日期降序取最新1条
+        const items = NEWS
+          .filter(n => n.type === type)
+          .sort((a, b) => parseDateTs(b.date) - parseDateTs(a.date));
+        return items[0];
+      })
+      .filter(Boolean) // 去掉空分类
       .map(n => {
         const poster = n.poster || POSTER_MAP[n.title];
         const wide = n.widePoster || WIDE_POSTER_MAP[n.title] || null;
