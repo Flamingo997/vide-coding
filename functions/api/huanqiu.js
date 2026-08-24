@@ -61,81 +61,82 @@ export async function onRequestGet(context) {
     const html = await r.text();
     const news = [];
     const seen = new Set();
-
-    // ===== 模式1：匹配带时间戳的完整文章条目（WebFetch 看到的格式） =====
-    // 形如：4Sm5T18cnJuarticle//img.huanqiucdn.cn/xxx.jpg标题ent.huanqiu.com1786582694639
-    const re1 = /article([^\s<>"']*?)([\u4e00-\u9fa5][^\s<>"']*?)ent\.huanqiu\.com(\d{12,})/g;
+    const hrefMap = new Map(); // title -> /article/xxx
     let m;
-    while ((m = re1.exec(html)) !== null) {
-      let title = (m[2] || '').trim();
-      const ts = parseInt(m[3], 10);
-      // 清洗标题（去掉尾部残留的HTML片段/符号）
-      title = title.replace(/^(jpg|png|gif|jpeg|webp)/i, '').trim();
-      // 去掉尾部多余的短字符（残留的 class/id 片段）
-      title = title.replace(/[a-zA-Z0-9_-]{1,8}$/, '').trim();
-      if (title.length >= 6 && title.length <= 80 && ts > 1e12) {
-        const key = title + '|' + ts;
-        if (!seen.has(key)) {
-          seen.add(key);
-          news.push({
-            title,
-            time: tsToRelative(ts),
-            ts,
-            url: `https://ent.huanqiu.com/article/${title.slice(0, 5).replace(/[^\w]/g, '')}`
-          });
-        }
-      }
-    }
 
-    // ===== 模式2：匹配 HTML 中的 article 节点（href + title + 时间）=====
-    // <a href="/article/4Sm5T18cnJu" ...>标题</a> ... 2026-08-12 ...
-    const re2 = /href=["'](\/article\/[^"'<>]+)["'][^<>]*>([^<>]{6,80})<\/a>/g;
-    const hrefMap = new Map();
-    while ((m = re2.exec(html)) !== null) {
+    // 预提取：收集所有 href="/article/xxx" -> 标题 的映射
+    const reHref = /href=["'](\/article\/[^"'<>]+)["'][^<>]*?>\s*([^<>]{6,100}?)\s*<\/a>/g;
+    while ((m = reHref.exec(html)) !== null) {
       const href = m[1];
       const title = m[2].trim();
-      if (title && !hrefMap.has(title)) {
+      if (title && title.length <= 100 && !hrefMap.has(title)) {
         hrefMap.set(title, href);
       }
     }
 
-    // 匹配日期（YYYY-MM-DD 或 时间戳）
-    const re3 = /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2}))?/g;
-    const dateStamps = [];
-    while ((m = re3.exec(html)) !== null) {
-      try {
-        const y = parseInt(m[1], 10);
-        const mo = parseInt(m[2], 10) - 1;
-        const d = parseInt(m[3], 10);
-        const h = m[4] ? parseInt(m[4], 10) : 12;
-        const mi = m[5] ? parseInt(m[5], 10) : 0;
-        const dt = new Date(y, mo, d, h, mi, 0, 0);
-        if (dt.getFullYear() === y && dt.getMonth() === mo && dt.getDate() === d) {
-          dateStamps.push(dt.getTime());
-        }
-      } catch (e) {}
-    }
-    dateStamps.sort((a, b) => b - a);
+    // 去掉 HTML 标签，得到纯文本（保留换行方便分隔）
+    const plain = html
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n');
 
-    // 如果模式1 没抓到足够内容，从常见新闻数据块中补
-    if (news.length < 6) {
-      // 从 HTML 文本中再尝试提取形如"标题 + 13位时间戳"的区块
-      const re4 = /([\u4e00-\u9fa5][\u4e00-\u9fa5A-Za-z0-9·\-—《》（）()【】\s,，。.、：:!?]{5,79}?)(?:ent\.huanqiu\.com|["']\s*)?(\d{13})/g;
-      while ((m = re4.exec(html)) !== null) {
-        const title = m[1].trim().replace(/[.。,，、:：!！?？]+$/, '').trim();
-        const ts = parseInt(m[2], 10);
-        const key = title + '|' + ts;
-        if (title.length >= 6 && title.length <= 80 && ts > 1e12 && !seen.has(key)) {
-          seen.add(key);
-          const href = hrefMap.get(title);
-          news.push({
-            title,
-            time: tsToRelative(ts),
-            ts,
-            url: href ? ('https://ent.huanqiu.com' + href) : 'https://ent.huanqiu.com/film'
-          });
-        }
+    // ===== 核心解析：按行扫描，匹配新闻块 =====
+    // 每行可能的格式：
+    //   [id]article[图片URL?]标题[时间戳?]ent.huanqiu.com[时间戳?]
+    //   标题[时间戳]ent.huanqiu.com
+    const lines = plain.split(/\n+/);
+    const approxTsStash = []; // 没匹配到标题时暂存的时间戳，用于后续无戳条目估算
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.length < 10) continue;
+
+      // 1) 提取 13位时间戳（可能出现在域名前或后，最多两个）
+      const tsMatches = line.match(/\d{13}/g) || [];
+      const timestamps = tsMatches.map(x => parseInt(x, 10)).filter(x => x > 1e12);
+
+      // 2) 去掉所有已知污染片段：article id、图片URL、域名、时间戳数字
+      let cleaned = line
+        .replace(/^\s*[A-Za-z0-9_-]{8,20}article/, '') // 去掉前缀 id+article
+        .replace(/\/\/img\.huanqiucdn\.cn[^\s\u4e00-\u9fa5《"]*(?:jpg|png|gif|jpeg|webp)\??/gi, ' ')
+        .replace(/ent\.huanqiu\.com/gi, ' ')
+        .replace(/\d{13,}/g, ' ')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+
+      // 3) 提取中文标题：必须以中文/《开头，长度 6-100，结尾不要残留半角符号
+      const titleMatch = cleaned.match(/([\u4e00-\u9fa5《][\u4e00-\u9fa5A-Za-z0-9·\-—：:、，。""''《》（）()【】\s?!！？,]{5,120}?[\u4e00-\u9fa5A-Za-z0-9》）】!?？！])/);
+      if (!titleMatch) continue;
+
+      let title = titleMatch[1].trim().replace(/[.。,，、:：]+$/, '').trim();
+      if (title.length < 6 || title.length > 100) continue;
+
+      // 去掉开头残留的 .jpg .png 等
+      title = title.replace(/^(jpg|png|gif|jpeg|webp)\s*/i, '').trim();
+      if (title.length < 6) continue;
+
+      // 4) 取最新的时间戳
+      let ts = timestamps.length > 0 ? Math.max(...timestamps) : 0;
+      if (!ts && approxTsStash.length) {
+        ts = approxTsStash[approxTsStash.length - 1] - 60 * 60 * 1000; // 回退1小时
       }
+
+      // 5) 去重 + 入队
+      const key = title + '|' + ts;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      if (ts > 1e12) approxTsStash.push(ts);
+
+      const href = hrefMap.get(title);
+      news.push({
+        title,
+        time: ts > 1e12 ? tsToRelative(ts) : '近期',
+        ts: ts || Date.now() - 3 * 24 * 3600 * 1000,
+        url: href ? ('https://ent.huanqiu.com' + href) : 'https://ent.huanqiu.com/film'
+      });
     }
 
     // ===== 兜底：从页面已知新闻块（搜索结果显示的那些固定标题）手动抽取 =====
