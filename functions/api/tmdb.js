@@ -67,18 +67,8 @@ function buildZhFallback({ title, date, genres, isMovie, voteAvg = 0, voteCount 
   return `《${t}》是一部${genrePart}华语${cate}${datePart}。${rating}`;
 }
 // 统一处理简介：根据中文率与是否华语，决定是否给中文兜底
-function finalizeOverview({ overview, zhTitle, isZhOrigin, genres, date, isMovie, voteAvg = 0, voteCount = 0, isDoc = false }) {
-  const raw = String(overview || '').trim();
-  if (!raw) return ''; // 空的交给前端 zhSummary/暂无简介
-  const ratio = chineseRatio(raw);
-  if (ratio >= 0.3) return raw; // 超过30%中文率，认为是正常中文简介
-  if (isZhOrigin) {
-    // 华语内容但简介几乎全英文 → 优先用结构化中文兜底（更符合用户阅读习惯）
-    return buildZhFallback({ title: zhTitle, date, genres, isMovie, voteAvg, voteCount, isDoc });
-  }
-  // 非华语内容 + 几乎无中文 → 在英文原文前加明显的友好标识
-  const prefix = '【暂无中文简介】';
-  return raw.startsWith(prefix) ? raw : (prefix + raw);
+function finalizeOverview({ overview }) {
+  return String(overview || '').trim();
 }
 
 // 返回完整简介（仅清理空白）
