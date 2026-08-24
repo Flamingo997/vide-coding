@@ -74,55 +74,41 @@ export async function onRequestGet(context) {
       }
     }
 
-    // 去掉 HTML 标签，得到纯文本（保留换行方便分隔）
-    const plain = html
+    // 只做基础清洗：去掉 style/script 与大部分 HTML 标签，保留连续空白分隔
+    const cleanedText = html
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<[^>]+>/g, '\n')
-      .replace(/[ \t]+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n');
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/[ \t\r\f\v]+/g, ' ')
+      .replace(/\n+/g, ' ');
 
-    // ===== 核心解析：按行扫描，匹配新闻块 =====
-    // 每行可能的格式：
-    //   [id]article[图片URL?]标题[时间戳?]ent.huanqiu.com[时间戳?]
-    //   标题[时间戳]ent.huanqiu.com
-    const lines = plain.split(/\n+/);
-    const approxTsStash = []; // 没匹配到标题时暂存的时间戳，用于后续无戳条目估算
+    // ===== 核心解析：一次性全局正则匹配新闻块 =====
+    // 目标匹配模式：[id]article[可选图片URL]标题[时间戳A?]ent.huanqiu.com[时间戳B?]
+    // 关键特性：
+    //   - 至少一个 13位时间戳（A 或 B）
+    //   - 标题紧随图片URL之后或紧跟article，以中文字符/《开头
+    const approxTsStash = [];
+    const articleRe = /[A-Za-z0-9_-]{8,20}article(?:\s*\/\/img\.huanqiucdn\.cn[^\s\u4e00-\u9fa5《"]*(?:jpg|png|gif|jpeg|webp)\??\s*)?([\u4e00-\u9fa5《][\s\S]{0,160}?)(?:ent\.huanqiu\.com)?(\d{13})?(?:ent\.huanqiu\.com)?\s*(\d{13})?/gi;
+    let m2;
+    while ((m2 = articleRe.exec(cleanedText)) !== null) {
+      const titleRaw = (m2[1] || '').trim();
+      if (!titleRaw) continue;
+      const tsA = m2[2] ? parseInt(m2[2], 10) : 0;
+      const tsB = m2[3] ? parseInt(m2[3], 10) : 0;
+      const ts = Math.max(tsA, tsB);
+      if (ts < 1e12) continue; // 必须至少有一个真实时间戳
 
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.length < 10) continue;
-
-      // 1) 提取 13位时间戳（可能出现在域名前或后，最多两个）
-      const tsMatches = line.match(/\d{13}/g) || [];
-      const timestamps = tsMatches.map(x => parseInt(x, 10)).filter(x => x > 1e12);
-
-      // 2) 去掉所有已知污染片段：article id、图片URL、域名、时间戳数字
-      let cleaned = line
-        .replace(/^\s*[A-Za-z0-9_-]{8,20}article/, '') // 去掉前缀 id+article
-        .replace(/\/\/img\.huanqiucdn\.cn\S*(?:jpg|png|gif|jpeg|webp)\??/gi, ' ')
-        .replace(/ent\.huanqiu\.com/gi, ' ')
-        .replace(/\d{13,}/g, ' ')
-        .replace(/[ \t]{2,}/g, ' ')
-        .trim();
-
-      // 3) 提取中文标题：贪婪取最长合法片段
-      //    第一步：用贪婪匹配获取最长的"中文字符为主"的区间
+      // 从 titleRaw 中裁剪真实的标题（取最长中文区间，尾部切掉残留字符）
       let title = '';
-      const greedyMatch = cleaned.match(/[\u4e00-\u9fa5《][\u4e00-\u9fa5A-Za-z0-9·\-—：:、，。""''《》（）()【】\s?!！？,—\-]{5,150}[\u4e00-\u9fa5A-Za-z0-9》）】!?？！]/);
-      if (greedyMatch) {
-        title = greedyMatch[0].trim();
+      const tm = titleRaw.match(/[\u4e00-\u9fa5《][\u4e00-\u9fa5A-Za-z0-9·\-—：:、，。""''《》（）()【】\s?!！？,—]{5,120}[\u4e00-\u9fa5A-Za-z0-9》）】!?？！]/);
+      if (tm) {
+        title = tm[0];
       } else {
-        // 回退：匹配第一个中文字符到行尾，再手动裁剪
-        const start = cleaned.search(/[\u4e00-\u9fa5《]/);
-        if (start >= 0) {
-          title = cleaned.slice(start).trim();
-        }
+        const s = titleRaw.search(/[\u4e00-\u9fa5《]/);
+        if (s >= 0) title = titleRaw.slice(s);
       }
-      if (!title) continue;
-
-      // 二次清洗：去掉尾部残留的 半角字母/id 片段、标点
-      title = title
+      title = (title || '')
         .replace(/^(jpg|png|gif|jpeg|webp)\s*/i, '')
         .replace(/\s*[a-zA-Z0-9_-]{1,10}$/, '')
         .replace(/[.。,，、:：]+$/, '')
@@ -130,21 +116,19 @@ export async function onRequestGet(context) {
 
       if (title.length < 6 || title.length > 120) continue;
 
-      // 4) 取最新的时间戳（仅当本行真的解析到时间戳时才用，否则不赋值）
-      let ts = timestamps.length > 0 ? Math.max(...timestamps) : 0;
+      // 过滤掉明显非影视资讯的噪声词
+      if (/邮箱|电话|编辑|联系方式|版权|关注我们|扫码|微信|公众号/.test(title)) continue;
 
-      // 5) 去重 + 入队
       const key = title + '|' + ts;
       if (seen.has(key)) continue;
       seen.add(key);
-
-      if (ts > 1e12) approxTsStash.push(ts);
+      approxTsStash.push(ts);
 
       const href = hrefMap.get(title);
       news.push({
         title,
-        time: ts > 1e12 ? tsToRelative(ts) : '近期',
-        ts: ts > 1e12 ? ts : (approxTsStash.length ? approxTsStash[approxTsStash.length - 1] - news.length * 1800000 : Date.now() - 86400000),
+        time: tsToRelative(ts),
+        ts,
         url: href ? ('https://ent.huanqiu.com' + href) : 'https://ent.huanqiu.com/film'
       });
     }
