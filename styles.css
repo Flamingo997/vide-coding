@@ -395,7 +395,7 @@ body {
   overflow: hidden;
   box-shadow: 0 2px 12px rgba(26, 31, 46, 0.1);
   transition: all 0.3s ease;
-  aspect-ratio: 16/9;
+  aspect-ratio: 2/3;
   background: #E5E7EB;
 }
 .cat-poster-wrap:hover {
