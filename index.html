@@ -579,7 +579,7 @@
               return `
               <div class="cat-card" data-type="${type}" data-title="${safeTitle}">
                 <div class="cat-poster-wrap">
-                  <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
+                  <img src="${n.poster || POSTER_MAP[n.title] || 'posters/default.jpg'}" alt="${n.title}" loading="lazy" onerror="this.src='posters/default.jpg'">
                 </div>
                 <div class="cat-card-info">
                   <div class="cat-card-title">${cleanTitle}</div>
@@ -686,9 +686,15 @@
       ]).then(([tmdbRes, shortRes]) => {
         const tmdbData = (tmdbRes.status === 'fulfilled' && tmdbRes.value && tmdbRes.value.code === 0 && tmdbRes.value.data) || [];
         const shortData = (shortRes.status === 'fulfilled' && shortRes.value && shortRes.value.code === 0 && shortRes.value.data) || [];
-        // 合并：TMDB 各分类 + HOSHIYOMI 短剧接口 + data.json 里的静态短剧条目
+        // 合并：TMDB 各分类 + data.json 静态短剧（优先，有本地海报）+ HOSHIYOMI 短剧补位
         const staticDuan = (data.NEWS || []).filter(n => n.type === 'duan');
-        NEWS = tmdbData.concat(shortData).concat(staticDuan);
+        // HOSHIYOMI 海报受跨域 ORB 限制，仅在 data.json 不足 8 条时补位
+        let duanList = staticDuan.slice();
+        if (duanList.length < 8) {
+          const shortWithPoster = shortData.filter(n => n.poster && n.poster.startsWith('http'));
+          duanList = duanList.concat(shortWithPoster).slice(0, 8);
+        }
+        NEWS = tmdbData.concat(duanList);
       });
     })
     .then(() => {
