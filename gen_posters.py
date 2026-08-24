@@ -302,6 +302,137 @@ def scene_si_lu(img, accent, dark):  # 丝路：沙丘 + 驼队 + 陶罐
     d.arc([360, 516, 420, 544], 0, 360, fill=accent + (255,), width=3)
     return img
 
+# ============ 短剧海报场景 ============
+
+def scene_shan_hun(img, accent, dark):  # 闪婚：戒指 + 心 + 花瓣
+    d = ImageDraw.Draw(img)
+    d.ellipse([180, 200, 300, 320], fill=accent + (60,))             # 光晕
+    d.ellipse([210, 230, 270, 290], outline=(255, 255, 255, 200), width=5)  # 戒指
+    d.ellipse([228, 248, 252, 272], fill=accent + (255,))             # 钻石
+    d.polygon([(240, 240), (246, 252), (240, 264), (234, 252)], fill=(255, 255, 255, 255))
+    random.seed('petals')
+    for _ in range(20):                                               # 飘落花瓣
+        x, y = random.randint(0, W), random.randint(0, H)
+        s = random.randint(4, 10)
+        d.ellipse([x-s, y, x+s, y+s*2], fill=(255, 180, 200, 160))
+    d.rectangle([0, 500, W, H], fill=dark)
+    return img
+
+def scene_hui_dao(img, accent, dark):  # 回到1995：老电视 + 城市剪影
+    d = ImageDraw.Draw(img)
+    d.rectangle([120, 180, 360, 380], fill=dark)                      # 电视框
+    d.rectangle([140, 200, 340, 360], fill=lerp(accent, (0, 0, 0), 0.3))  # 屏幕
+    d.polygon([(200, 260), (280, 260), (240, 320)], fill=accent + (200,))  # 屏幕城市
+    d.rectangle([230, 290, 250, 320], fill=dark)
+    d.line([(180, 340), (300, 340)], fill=accent + (180,), width=2)  # 地面线
+    d.rectangle([150, 380, 330, 420], fill=dark)                      # 电视底座
+    d.rectangle([195, 420, 285, 440], fill=dark)
+    d.ellipse([60, 460, 120, 520], fill=dark)                        # 城市楼群
+    d.rectangle([80, 440, 110, 520], fill=dark)
+    d.rectangle([380, 450, 430, 520], fill=dark)
+    d.rectangle([400, 430, 420, 520], fill=dark)
+    d.rectangle([0, 520, W, H], fill=dark)
+    return img
+
+def scene_ti_jia(img, accent, dark):  # 替嫁千金：面具 + 装饰
+    d = ImageDraw.Draw(img)
+    d.ellipse([140, 160, 340, 360], fill=accent + (40,))            # 光晕
+    d.polygon([(160, 200), (320, 200), (300, 280), (240, 340), (180, 280)], fill=dark)  # 面具
+    d.ellipse([190, 220, 230, 260], fill=accent + (255,))            # 眼孔
+    d.ellipse([250, 220, 290, 260], fill=accent + (255,))
+    d.line([(240, 200), (240, 340)], fill=accent + (200,), width=2)  # 中线
+    for i in range(5):                                                # 装饰花纹
+        d.arc([200 + i*10, 280, 280 - i*10, 320], 0, 180, fill=accent + (150,), width=2)
+    random.seed('sparkle')
+    for _ in range(15):
+        x, y = random.randint(40, W-40), random.randint(80, 480)
+        r = random.choice([1, 2, 3])
+        d.ellipse([x-r, y-r, x+r, y+r], fill=(255, 255, 255, 180))
+    d.rectangle([0, 480, W, H], fill=dark)
+    return img
+
+def scene_chong_sheng(img, accent, dark):  # 重生：沙漏 + 光芒
+    d = ImageDraw.Draw(img)
+    d.polygon([(200, 160), (280, 160), (260, 280), (220, 280)], fill=dark)  # 沙漏上
+    d.polygon([(220, 320), (260, 320), (280, 440), (200, 440)], fill=dark)  # 沙漏下
+    d.rectangle([190, 150, 290, 165], fill=dark)                      # 顶
+    d.rectangle([190, 435, 290, 450], fill=dark)                     # 底
+    for _ in range(8):                                                # 流沙
+        sx = random.randint(225, 255)
+        sy = random.randint(285, 315)
+        d.ellipse([sx-1, sy, sx+1, sy+3], fill=accent + (220,))
+    d.line([(240, 165), (240, 280)], fill=accent + (100,), width=1)  # 中线
+    for i in range(6):                                                # 光芒
+        ang = i * 60
+        rad = math.radians(ang)
+        d.line([(240, 300), (240 + int(180*math.cos(rad)), 300 + int(180*math.sin(rad)))], fill=accent + (30,), width=2)
+    d.rectangle([0, 460, W, H], fill=dark)
+    return img
+
+def scene_li_shao(img, accent, dark):  # 厉少：豪车 + 玫瑰
+    d = ImageDraw.Draw(img)
+    d.rectangle([80, 340, 400, 420], fill=dark)                      # 车身
+    d.polygon([(140, 340), (200, 280), (320, 280), (380, 340)], fill=dark)  # 车顶
+    d.ellipse([110, 400, 170, 460], fill=(20, 20, 30))               # 车轮
+    d.ellipse([120, 410, 160, 450], fill=accent + (180,))
+    d.ellipse([320, 400, 380, 460], fill=(20, 20, 30))
+    d.ellipse([330, 410, 370, 450], fill=accent + (180,))
+    d.rectangle([200, 300, 320, 335], fill=accent + (100,))         # 车窗
+    d.ellipse([340, 200, 400, 260], fill=(200, 50, 80))             # 玫瑰
+    d.ellipse([350, 210, 390, 250], fill=(220, 80, 100))
+    d.line([(370, 260), (370, 340)], fill=(80, 120, 60), width=3)    # 茎
+    for i in range(3):                                                # 叶
+        d.ellipse([360-i*4, 290-i*10, 380-i*4, 300-i*10], fill=(80, 120, 60))
+    d.rectangle([0, 460, W, H], fill=dark)
+    return img
+
+def scene_li_hun(img, accent, dark):  # 离婚：高跟鞋 + 城市
+    d = ImageDraw.Draw(img)
+    random.seed('city2')
+    x = 0
+    while x < W:                                                    # 楼群
+        bw, bh = random.randint(40, 80), random.randint(120, 240)
+        d.rectangle([x, 340-bh, x+bw, 340], fill=dark)
+        x += bw + random.randint(4, 12)
+    d.ellipse([300, 60, 380, 140], fill=accent + (200,))            # 朝阳
+    d.polygon([(180, 380), (220, 380), (240, 440), (220, 460), (180, 460), (160, 440)], fill=accent + (255,))  # 鞋
+    d.polygon([(180, 380), (220, 380), (215, 400), (185, 400)], fill=lerp(accent, (255,255,255), 0.2) + (255,))  # 鞋面
+    d.rectangle([155, 450, 165, 470], fill=accent + (255,))          # 鞋跟
+    d.line([(160, 470), (240, 470)], fill=accent + (180,), width=3)  # 地面
+    d.rectangle([0, 470, W, H], fill=dark)
+    return img
+
+def scene_du_xin(img, accent, dark):  # 读心：气泡 + 问号
+    d = ImageDraw.Draw(img)
+    for cx, cy, cr in [(160, 200, 60), (320, 180, 45), (240, 320, 50), (380, 300, 35)]:  # 思维气泡
+        d.ellipse([cx-cr, cy-cr, cx+cr, cy+cr], outline=accent + (200,), width=3)
+        d.ellipse([cx-cr+6, cy-cr+6, cx+cr-6, cy+cr-6], fill=accent + (20,))
+    d.ellipse([200, 150, 250, 200], fill=accent + (255,))            # 问号主体
+    d.rectangle([218, 205, 232, 220], fill=accent + (255,))          # 问号点
+    stars(d, 30, 'mind', 400, (255, 255, 255, 150))
+    d.rectangle([0, 440, W, H], fill=dark)
+    return img
+
+def scene_shan_hun_da_lao(img, accent, dark):  # 闪婚大佬：契约 + 钢印
+    d = ImageDraw.Draw(img)
+    d.rectangle([100, 200, 380, 440], fill=lerp(dark, (255,255,255), 0.08))  # 文件
+    d.rectangle([100, 200, 380, 440], outline=accent + (150,), width=2)
+    d.line([(140, 260), (340, 260)], fill=accent + (100,), width=1)  # 文字线
+    d.line([(140, 290), (320, 290)], fill=accent + (100,), width=1)
+    d.line([(140, 320), (300, 320)], fill=accent + (100,), width=1)
+    d.ellipse([280, 340, 360, 420], outline=(180, 50, 50, 180), width=4)  # 印章
+    d.ellipse([290, 350, 350, 410], outline=(180, 50, 50, 120), width=2)
+    d.line([(150, 380), (260, 380)], fill=accent + (200,), width=3)  # 签名
+    d.line([(155, 375), (165, 388)], fill=accent + (200,), width=2)
+    d.line([(165, 375), (155, 388)], fill=accent + (200,), width=2)
+    random.seed('confetti')
+    for _ in range(12):
+        x, y = random.randint(0, W), random.randint(60, 180)
+        s = random.randint(3, 7)
+        d.ellipse([x-s, y, x+s, y+s*2], fill=(255, 200, 100, 150))
+    d.rectangle([0, 440, W, H], fill=dark)
+    return img
+
 # ============ 配置：文件名 / 标题 / 类型 / 渐变 / 强调色 / 场景函数 ============
 ITEMS = [
     ('01_chang_an', '长安霓裳录', '电视剧 · 古装悬疑', (168, 84, 84), (70, 30, 44), (250, 208, 137), scene_chang_an, 'poly'),
@@ -318,6 +449,15 @@ ITEMS = [
     ('12_mao_ding', '猫町奇谭', '动漫 · 治愈奇幻', (246, 168, 128), (196, 106, 116), (90, 56, 74), scene_mao_ding, 'img'),
     ('13_shan_he', '山河笔记', '纪录片 · 自然人文', (92, 138, 112), (28, 54, 44), (238, 226, 160), scene_shan_he, 'img'),
     ('14_si_lu', '丝路遗珍', '纪录片 · 考古历史', (222, 166, 92), (140, 92, 44), (255, 238, 190), scene_si_lu, 'img'),
+    # 短剧海报
+    ('15_shan_hun', '闪婚后她野翻了', '短剧 · 甜宠闪婚', (200, 80, 120), (80, 20, 50), (255, 180, 200), scene_shan_hun, 'img'),
+    ('16_hui_dao', '回到1995当首富', '短剧 · 年代商战', (180, 130, 60), (60, 40, 20), (255, 200, 100), scene_hui_dao, 'img'),
+    ('17_ti_jia', '替嫁千金是满级大佬', '短剧 · 替嫁马甲', (120, 60, 140), (40, 20, 60), (200, 150, 255), scene_ti_jia, 'img'),
+    ('18_chong_sheng', '重生后我成了前夫的白月光', '短剧 · 重生复仇', (60, 80, 140), (20, 30, 60), (150, 200, 255), scene_chong_sheng, 'img'),
+    ('19_li_shao', '厉少的心尖宠又野翻了', '短剧 · 甜宠萌宝', (220, 100, 130), (100, 40, 60), (255, 150, 180), scene_li_shao, 'img'),
+    ('20_li_hun', '离婚后前妻她高攀不起', '短剧 · 逆袭独立', (40, 120, 110), (10, 40, 40), (120, 220, 200), scene_li_hun, 'img'),
+    ('21_du_xin', '全家偷听我心声后杀疯了', '短剧 · 读心团宠', (200, 130, 50), (80, 50, 20), (255, 200, 100), scene_du_xin, 'img'),
+    ('22_shan_hun_da_lao', '闪婚大佬后我成了全网白月光', '短剧 · 闪婚身份', (160, 80, 110), (50, 20, 40), (255, 200, 220), scene_shan_hun_da_lao, 'img'),
 ]
 
 for fname, title, genre, c1, c2, accent, fn, mode in ITEMS:
