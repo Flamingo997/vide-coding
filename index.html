@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=old12">
+<link rel="stylesheet" href="styles.css?v=old13">
 </head>
 <body>
 
@@ -388,10 +388,16 @@
   function oneLineSummary(text) {
     if (!text || text.length < 2) return '暂无简介';
     let s = text.replace(/^《.+?》/, '').trim();
-    const m = s.match(/^(.+?)[。.!?！？]/);
-    if (m && m[1].length > 3) s = m[1].trim();
-    if (s.length > 18) return s.slice(0, 18) + '…';
-    return s;
+    s = s.replace(/[（(].+?[)）]/g, '').trim();
+    s = s.replace(/^(本剧|本片|该剧|该影片|影片|故事)?(讲述(了)?|描绘(了)?|展现(了)?|记录(了)?)?/, '');
+    const clauses = s.split(/[，,。.！!？?；;]/);
+    for (const c of clauses) {
+      const t = c.trim();
+      if (t.length >= 4 && t.length <= 18) return t;
+    }
+    let first = (clauses[0] || s).trim();
+    if (first.length > 18) return first.slice(0, 18) + '…';
+    return first || '暂无简介';
   }
   function renderCatGroups() {
     const order = ['movie', 'drama', 'show', 'anime', 'duan', 'doc'];
