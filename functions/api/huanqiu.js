@@ -74,56 +74,45 @@ export async function onRequestGet(context) {
       }
     }
 
-    // 只做基础清洗：去掉 style/script 与大部分 HTML 标签，保留连续空白分隔
+    // 只做基础清洗：去掉 style/script 与大部分 HTML 标签，保留内容之间的空格
     const cleanedText = html
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<[^>]+>/g, ' ')
       .replace(/&nbsp;/g, ' ')
-      .replace(/[ \t\r\f\v]+/g, ' ')
-      .replace(/\n+/g, ' ');
+      .replace(/\s+/g, ' ');
 
-    // ===== 核心解析：一次性全局正则匹配新闻块 =====
-    // 目标匹配模式：[id]article[可选图片URL]标题[时间戳A?]ent.huanqiu.com[时间戳B?]
-    // 关键特性：
-    //   - 至少一个 13位时间戳（A 或 B）
-    //   - 标题紧随图片URL之后或紧跟article，以中文字符/《开头
     const approxTsStash = [];
-    const articleRe = /[A-Za-z0-9_-]{8,20}article(?:\s*\/\/img\.huanqiucdn\.cn[^\s\u4e00-\u9fa5《"]*(?:jpg|png|gif|jpeg|webp)\??\s*)?([\u4e00-\u9fa5《][\s\S]{0,160}?)(?:ent\.huanqiu\.com)?(\d{13})?(?:ent\.huanqiu\.com)?\s*(\d{13})?/gi;
-    let m2;
-    while ((m2 = articleRe.exec(cleanedText)) !== null) {
-      const titleRaw = (m2[1] || '').trim();
-      if (!titleRaw) continue;
-      const tsA = m2[2] ? parseInt(m2[2], 10) : 0;
-      const tsB = m2[3] ? parseInt(m2[3], 10) : 0;
-      const ts = Math.max(tsA, tsB);
-      if (ts < 1e12) continue; // 必须至少有一个真实时间戳
 
-      // 从 titleRaw 中裁剪真实的标题（取最长中文区间，尾部切掉残留字符）
-      let title = '';
-      const tm = titleRaw.match(/[\u4e00-\u9fa5《][\u4e00-\u9fa5A-Za-z0-9·\-—：:、，。""''《》（）()【】\s?!！？,—]{5,120}[\u4e00-\u9fa5A-Za-z0-9》）】!?？！]/);
-      if (tm) {
-        title = tm[0];
-      } else {
-        const s = titleRaw.search(/[\u4e00-\u9fa5《]/);
-        if (s >= 0) title = titleRaw.slice(s);
-      }
-      title = (title || '')
-        .replace(/^(jpg|png|gif|jpeg|webp)\s*/i, '')
-        .replace(/\s*[a-zA-Z0-9_-]{1,10}$/, '')
-        .replace(/[.。,，、:：]+$/, '')
+    // ===== 核心解析：两套全局正则（兼容两种时间戳位置） =====
+    // 模式A：标题 + 时间戳 + ent.huanqiu.com
+    //   例：《年会不能停！2》导演：让更多普通人被看见1786582621750ent.huanqiu.com
+    const reA = /article\S*?([\u4e00-\u9fa5《][\u4e00-\u9fa5A-Za-z0-9·\-—：:、，。""''《》（）()【】\s?!！？,]{6,120})(\d{13})ent\.huanqiu\.com/gi;
+    // 模式B：标题 + ent.huanqiu.com + 时间戳（WebFetch首次抓取观察到的格式）
+    //   例：2026暑期档电影票房突破90亿元ent.huanqiu.com1786582694639
+    const reB = /article\S*?([\u4e00-\u9fa5《][\u4e00-\u9fa5A-Za-z0-9·\-—：:、，。""''《》（）()【】\s?!！？,]{6,120})ent\.huanqiu\.com(\d{13})/gi;
+
+    function cleanTitle(raw) {
+      let title = (raw || '')
+        .replace(/^(jpg|png|gif|jpeg|webp)\S*/i, '')
+        // 尾部裁剪：去掉最后一个不合法字符之后的残留
+        .replace(/[^!?？！\u4e00-\u9fa5》）】0-9A-Za-z]+$/g, '')
+        .replace(/\s+[a-zA-Z0-9_-]{1,10}$/, '')
+        .replace(/[.。,，、:：\s]+$/g, '')
         .trim();
+      // 如果开头有图片扩展名残留
+      const firstChIdx = title.search(/[\u4e00-\u9fa5《]/);
+      if (firstChIdx > 0) title = title.slice(firstChIdx).trim();
+      return title;
+    }
 
-      if (title.length < 6 || title.length > 120) continue;
-
-      // 过滤掉明显非影视资讯的噪声词
-      if (/邮箱|电话|编辑|联系方式|版权|关注我们|扫码|微信|公众号/.test(title)) continue;
-
+    function pushOne(title, ts) {
+      if (!title || title.length < 6 || title.length > 120 || !(ts > 1e12)) return;
+      if (/邮箱|电话|编辑|联系方式|版权|关注我们|扫码|微信公众号|责编|记者/.test(title)) return;
       const key = title + '|' + ts;
-      if (seen.has(key)) continue;
+      if (seen.has(key)) return;
       seen.add(key);
       approxTsStash.push(ts);
-
       const href = hrefMap.get(title);
       news.push({
         title,
@@ -131,6 +120,14 @@ export async function onRequestGet(context) {
         ts,
         url: href ? ('https://ent.huanqiu.com' + href) : 'https://ent.huanqiu.com/film'
       });
+    }
+
+    let mm;
+    while ((mm = reA.exec(cleanedText)) !== null) {
+      pushOne(cleanTitle(mm[1]), parseInt(mm[2], 10));
+    }
+    while ((mm = reB.exec(cleanedText)) !== null) {
+      pushOne(cleanTitle(mm[1]), parseInt(mm[2], 10));
     }
 
     // ===== 兜底：从页面已知新闻块（搜索结果显示的那些固定标题）手动抽取 =====
