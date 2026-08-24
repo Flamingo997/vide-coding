@@ -54,7 +54,7 @@ function pickOverview(zhItem, enItem) {
   return '';
 }
 
-// 选取标题：华语用原名，其他用英文标题
+// 选取标题：中文译名最高优先级（只要 TMDB 返回含汉字的中文译名就直接用）；否则华语用原名，非华语用英文标题
 function pickTitle(zhItem, enItem, isMovie) {
   const zh = zhItem || {};
   const en = enItem || {};
@@ -62,10 +62,16 @@ function pickTitle(zhItem, enItem, isMovie) {
   const zhTitle = isMovie ? zh.title : zh.name;
   const enTitle = isMovie ? en.title : en.name;
   const origLang = zh.original_language || en.original_language || '';
-  // 华语内容用中文名
+
+  // 【关键修复】中文译名最高优先：只要 zh.title/zh.name 里有汉字，就直接用中文译名
+  // 例：Deadpool & Wolverine → 若 zh.title="死侍与金刚狼" → 显示中文，不再给英文原名
+  if (zhTitle && hasChinese(zhTitle)) return zhTitle;
+
+  // 华语内容：如果中文译名为空/不含汉字，退回原名（避免空显示）
   if (origLang === 'zh' || origLang === 'cn') return origTitle || zhTitle || enTitle || '未知';
-  // 非华语：优先英文标题
-  return enTitle || zhTitle || origTitle || '未知';
+
+  // 非华语内容：无中文译名时退回英文标题
+  return enTitle || origTitle || zhTitle || '未知';
 }
 
 function mapShow(zhItem, enItem, genreNames) {
