@@ -258,7 +258,7 @@
           poster,
           wide,
           type: n.type,
-          summary: n.summary,
+          summary: n.detail?.intro || n.summary,
           color: TYPE_MAP[n.type].color
         };
       });
@@ -393,13 +393,51 @@
     let s = text.replace(/^《.+?》/, '').trim();
     s = s.replace(/[（(].+?[)）]/g, '').trim();
     s = s.replace(/^(本剧|本片|该剧|该影片|影片|故事)?(讲述(了)?|描绘(了)?|展现(了)?|记录(了)?)?/, '');
-    const clauses = s.split(/[，,。.！!？?；;]/);
+    const clauses = s.split(/[，,。.！!？?；;]/).map(c => c.trim()).filter(c => c);
     console.log('[简介生成] 原文:', text.slice(0, 40) + '…', '|| 去杂后:', s.slice(0, 40) + '…', '|| 分句数:', clauses.length, '|| title=', title);
-    for (let i = 0; i < clauses.length; i++) {
-      const t = clauses[i].trim();
-      console.log('  [分句' + i + '] len=' + t.length + ' "' + t + '"' + (t.length >= 4 && t.length <= 18 ? ' ✓命中' : ''));
-      if (t.length >= 4 && t.length <= 18) return t;
+
+    // 动作动词表：出现这些词的分句更可能是核心剧情句
+    const ACTION_WORDS = ['演绎','共破','探秘','上演','集结','坐镇','结伴','慢游','交锋','探索','归来','开启','遭遇','改写','奇遇','野翻','翻盘','带队','揭开','狂飙','繁花','流浪','飞驰','热辣','漫画','逆行','乘风','重启','追光','寻梦','破局','追凶','缉毒','卧底','告白','回归','上线','开播','首映','定档','独播','全景','记录','见证','呈现'];
+    // 背景/评价开头模式：这类分句优先级低
+    const BG_PATTERNS = [/^.{1,6}之[上下中内]/, /^.{1,6}案$/, /^.{1,10}力作/, /^.{1,6}集结$/, /^.{1,6}归来$/, /^历时.{1,6}/, /^重走/, /^毕业之夏/, /^盛唐/, /^深海/, /^家庭秘密/, /^水彩画风/, /^水墨国风/, /^星际远征/, /^契约婚姻/, /^重返90/, /^人机对决/, /^黄渤.{0,4}结伴/, /^原创音乐人/, /^张译黄景瑜/, /^文牧野/];
+
+    function scoreClause(t, idx) {
+      let score = 0;
+      // 长度合适（4-18字）
+      const lenOk = t.length >= 4 && t.length <= 18;
+      if (!lenOk) return -1000;
+      score += 10;
+      // 包含动作动词，大幅加分
+      for (const w of ACTION_WORDS) {
+        if (t.includes(w)) { score += 30; break; }
+      }
+      // 背景/评价模式，扣分
+      for (const p of BG_PATTERNS) {
+        if (p.test(t)) { score -= 15; break; }
+      }
+      // 非首分句轻微加分（原文后半句往往是核心剧情）
+      if (idx > 0) score += 5;
+      return score;
     }
+
+    let best = null, bestScore = -Infinity;
+    for (let i = 0; i < clauses.length; i++) {
+      const t = clauses[i];
+      const sc = scoreClause(t, i);
+      const hit = sc >= 0;
+      console.log('  [分句' + i + '] len=' + t.length + ' score=' + sc + ' "' + t + '"' + (hit ? ' ✓候选' : ''));
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = t;
+      }
+    }
+
+    if (best && bestScore >= 0) {
+      console.log('  [最终命中] "' + best + '"', '|| title=', title);
+      return best;
+    }
+
+    // 兜底逻辑
     let first = (clauses[0] || s).trim();
     if (first.length > 18) {
       console.log('  [兜底] 第一句超18字，截断:', first.slice(0, 18) + '…', '|| title=', title);
