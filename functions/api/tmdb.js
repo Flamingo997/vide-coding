@@ -272,7 +272,7 @@ export async function onRequestGet(context) {
     });
 
     // 过滤
-    const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', 'Bonnie Blue'];
+    const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', 'Bonnie Blue', 'Doble tentación', 'Doble Tentación'];
     let list = items
       .filter(n => n.date)
       .filter(n => n.poster)
