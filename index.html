@@ -528,8 +528,33 @@
   function oneLineSummary(text) {
     if (!text || text.length < 2) return '暂无简介';
     let s = text.replace(/^《.+?》/, '').trim();
-    const m = s.match(/^(.+?)[。.!?！？]/);
-    if (m && m[1].length > 3) s = m[1].trim();
+    // 分句：遇到句末标点就切，但若在引号配对中间则延后（把引号整体吞完再切）
+    let cut = s;
+    const quoteMap = { '"': '"', '“': '”', '‘': '’', '「': '」', '『': '』' };
+    const closeMap = { '”': '“', '’': '‘', '」': '「', '』': '『' };
+    const stack = [];
+    let cutIdx = -1;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (quoteMap[ch]) { stack.push(ch); }
+      else if (closeMap[ch]) { if (stack[stack.length - 1] === closeMap[ch]) stack.pop(); }
+      else if (ch === '"') { if (stack[stack.length - 1] === '"') stack.pop(); else stack.push('"'); }
+      if (stack.length === 0 && /[。.!?！？…]/.test(ch)) { cutIdx = i; break; }
+    }
+    if (cutIdx > 3) cut = s.slice(0, cutIdx + 1).trim();
+    s = cut;
+
+    // 引号闭合补全：保证返回结果的引号配对
+    const stack2 = [];
+    for (const ch of s) {
+      if (quoteMap[ch]) { stack2.push(ch); }
+      else if (closeMap[ch]) { if (stack2[stack2.length - 1] === closeMap[ch]) stack2.pop(); }
+      else if (ch === '"') { if (stack2[stack2.length - 1] === '"') stack2.pop(); else stack2.push('"'); }
+    }
+    while (stack2.length) {
+      const open = stack2.pop();
+      s += quoteMap[open] || open;
+    }
     return s;
   }
   function renderCatGroups() {
