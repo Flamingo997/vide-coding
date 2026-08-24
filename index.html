@@ -600,21 +600,22 @@
     });
   }
 
-  // ============ 首页边栏：票房榜 + 大盘 + 资讯（优化版） ============
+  // ============ 首页边栏：票房榜 + 大盘 + 资讯（猫眼专业版实时数据） ============
   function renderSidebar() {
-    const movies = NEWS.filter(n => n.type === 'movie' && n.event === 'online')
-      .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
-    let sum = 0;
-    document.getElementById('boxOffice').innerHTML = movies.map((n, i) => {
+    // 先用 NEWS 里的电影数据做兜底渲染
+    const fallbackMovies = NEWS.filter(n => n.type === 'movie' && n.event === 'online')
+      .sort((a, b) => parseDateTs(b.date) - parseDateTs(a.date)).slice(0, 5);
+    let fbSum = 0;
+    document.getElementById('boxOffice').innerHTML = fallbackMovies.map((n, i) => {
       const box = pseudoBox(n.title, i + 1);
-      sum += box;
+      fbSum += box;
       const name = n.title.replace(/《(.+?)》.*/, '$1');
-      const poster = n.poster || POSTER_MAP[n.title];
+      const poster = n.poster || POSTER_MAP[n.title] || 'posters/default.jpg';
       if (i === 0) {
         return `
           <div class="bo-item bo-top">
             <div class="bo-top-poster">
-              <img src="${poster}" alt="${name}">
+              <img src="${poster}" alt="${name}" onerror="this.src='posters/default.jpg'">
               <span class="bo-rank top3 big">1</span>
             </div>
             <div class="bo-top-info">
@@ -631,10 +632,48 @@
         </div>`;
     }).join('') || '<div class="empty-tip">暂无数据</div>';
 
-    document.getElementById('marketNum').textContent = (sum * 2.6 / 10000).toFixed(2) + ' 亿';
-    const now = new Date();
-    document.getElementById('marketMeta').textContent =
-      `更新于 ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')} · 数据来源：灯塔/猫眼`;
+    document.getElementById('marketNum').textContent = (fbSum * 2.6 / 10000).toFixed(2) + ' 亿';
+    document.getElementById('marketMeta').textContent = '数据加载中… · 数据来源：猫眼专业版';
+
+    // 异步请求猫眼专业版实时票房
+    fetch('/api/maoyan')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data || data.code !== 0 || !data.movies || !data.movies.length) return;
+
+        const movies = data.movies;
+        // 渲染票房榜
+        document.getElementById('boxOffice').innerHTML = movies.slice(0, 5).map((m, i) => {
+          // 从 NEWS 中匹配海报
+          const newsMatch = NEWS.find(n => n.title.includes(m.name));
+          const poster = (newsMatch && (newsMatch.poster || POSTER_MAP[newsMatch.title])) || 'posters/default.jpg';
+          if (i === 0) {
+            return `
+              <div class="bo-item bo-top">
+                <div class="bo-top-poster">
+                  <img src="${poster}" alt="${m.name}" onerror="this.src='posters/default.jpg'">
+                  <span class="bo-rank top3 big">1</span>
+                </div>
+                <div class="bo-top-info">
+                  <div class="bo-top-name">${m.name}</div>
+                  <div class="bo-top-box">${m.boxDesc} <span class="bo-trend">票房占比 ${m.boxRate}</span></div>
+                </div>
+              </div>`;
+          }
+          return `
+            <div class="bo-item">
+              <span class="bo-rank${i < 3 ? ' top3' : ''}">${m.rank}</span>
+              <span class="bo-name">${m.name}</span>
+              <span class="bo-num">${m.boxDesc}</span>
+            </div>`;
+        }).join('');
+
+        // 渲染大盘
+        document.getElementById('marketNum').textContent = data.totalBoxDesc;
+        document.getElementById('marketMeta').textContent =
+          `更新于 ${data.updateTime} · 数据来源：${data.source}`;
+      })
+      .catch(() => {});
 
     document.getElementById('flashList').innerHTML = NEWS_FLASH.map((f, i) => `
       <div class="flash-item">
