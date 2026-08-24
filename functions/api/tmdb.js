@@ -79,13 +79,18 @@ function mapShow(zhItem, enItem, genreNames) {
   const genres = gids.map(id => genreNames[id]).filter(Boolean).join(' / ');
   const title = pickTitle(zhItem, enItem, false);
   const overview = pickOverview(zhItem, enItem);
+  // 实时日期判断：date <= 今天 = 热播中(online)；date > 今天 = 定档(schedule)
+  const airDate = s.first_air_date || '';
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const isUpcoming = airDate > todayStr;
   return {
     id: 'tmdb-tv-' + s.id,
-    date: s.first_air_date,
+    date: airDate,
     type,
-    event: 'online',
-    status: 'done',
-    title: `《${title}》热播中`,
+    event: isUpcoming ? 'schedule' : 'online',
+    status: isUpcoming ? 'pending' : 'done',
+    title: isUpcoming ? `《${title}》定档${fmtDate(airDate)}` : `《${title}》热播中`,
     summary: zhSummary(overview),
     source: 'TMDB',
     sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
@@ -109,8 +114,8 @@ export async function onRequestGet(context) {
 
   try {
     // 双语言并行请求：zh-CN + en-US
-    // 日期过滤：放宽到 2025-01-01 确保各分类至少8部内容
-    const DATE_GTE = '2025-01-01';
+    // 日期过滤：放宽到 2024-01-01 确保各分类至少8部内容
+    const DATE_GTE = '2024-01-01';
     const DATE_LTE = '2026-12-31';
     const MOVIE_DATE_GTE = '2025-01-01';
     const MOVIE_DATE_LTE = '2026-12-31';
@@ -137,9 +142,9 @@ export async function onRequestGet(context) {
       tmdb('/movie/upcoming?region=CN&page=1', key, 'en-US'),
       tmdb('/tv/on_the_air?page=1', key, 'zh-CN'),
       tmdb('/tv/on_the_air?page=1', key, 'en-US'),
-      // 电视剧：genre 10766(剧情) 10765(肥皂)，日期>=2026-06-01
-      tmdb(`/discover/tv?with_genres=10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
-      tmdb(`/discover/tv?with_genres=10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 电视剧：genre 18(剧情) 10766(肥皂) 10765(科幻奇幻)，日期>=2024-01-01
+      tmdb(`/discover/tv?with_genres=18,10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=18,10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
       // 动漫：genre 16(动画)，日期>=2026-06-01
       tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
       tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
@@ -299,8 +304,8 @@ export async function onRequestGet(context) {
 
     // 过滤
     const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', 'Bonnie Blue', 'Doble tentación', 'Doble Tentación'];
-    // 全局日期下限：所有内容必须 >= 2025-01-01，杜绝年代久远的影片混入
-    const MIN_DATE = '2025-01-01';
+    // 全局日期下限：所有内容必须 >= 2024-01-01，杜绝年代久远的影片混入
+    const MIN_DATE = '2024-01-01';
     let list = items
       .filter(n => n.date && n.date >= MIN_DATE)   // 日期下限：2026年起
       .filter(n => n.poster)
