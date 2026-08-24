@@ -35,6 +35,51 @@ function cut(text, len) {
 function hasChinese(text) {
   return /[\u4e00-\u9fff]/.test(text || '');
 }
+// 中文率：中文字符占比（0-1），用于判断一段文字是不是"用中文写的"
+function chineseRatio(text) {
+  const s = String(text || '').trim();
+  if (!s) return 0;
+  const cn = s.match(/[\u4e00-\u9fff]/g);
+  return cn ? (cn.length / s.length) : 0;
+}
+// 华语影片暂无中文简介时，用影片基本信息拼接一段简短的中文兜底介绍（避免大段英文）
+function buildZhFallback({ title, date, genres, isMovie, voteAvg = 0, voteCount = 0, isDoc = false }) {
+  const t = (title || '').replace(/[《》]/g, '').trim();
+  const genrePart = genres && genres.length > 1 ? `${genres.replace(/\s*\/\s*/g, '、')}类型的` : '';
+  const cate = isDoc ? '纪录片' : (isMovie ? '影片' : '剧集');
+  let datePart = '';
+  if (date) {
+    const d = new Date(date);
+    if (!isNaN(d.getTime())) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      d.setHours(0, 0, 0, 0);
+      datePart = d >= today
+        ? `，预计 ${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日${isMovie ? '公映' : '开播'}`
+        : `，已于 ${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日${isMovie ? '公映' : '开播'}`;
+    }
+  }
+  let rating = '';
+  if (voteCount > 0) {
+    rating = ` TMDB ${(Number(voteAvg) || 0).toFixed(1)} 分（${voteCount} 人评价）。`;
+  } else {
+    rating = ' TMDB 暂无评分数据。';
+  }
+  return `《${t}》是一部${genrePart}华语${cate}${datePart}。${rating}`;
+}
+// 统一处理简介：根据中文率与是否华语，决定是否给中文兜底
+function finalizeOverview({ overview, zhTitle, isZhOrigin, genres, date, isMovie, voteAvg = 0, voteCount = 0, isDoc = false }) {
+  const raw = String(overview || '').trim();
+  if (!raw) return ''; // 空的交给前端 zhSummary/暂无简介
+  const ratio = chineseRatio(raw);
+  if (ratio >= 0.3) return raw; // 超过30%中文率，认为是正常中文简介
+  if (isZhOrigin) {
+    // 华语内容但简介几乎全英文 → 优先用结构化中文兜底（更符合用户阅读习惯）
+    return buildZhFallback({ title: zhTitle, date, genres, isMovie, voteAvg, voteCount, isDoc });
+  }
+  // 非华语内容 + 几乎无中文 → 在英文原文前加明显的友好标识
+  const prefix = '【暂无中文简介】';
+  return raw.startsWith(prefix) ? raw : (prefix + raw);
+}
 
 // 返回完整简介（仅清理空白）
 function zhSummary(overview) {
@@ -84,12 +129,25 @@ function mapShow(zhItem, enItem, genreNames) {
   }
   const genres = gids.map(id => genreNames[id]).filter(Boolean).join(' / ');
   const title = pickTitle(zhItem, enItem, false);
-  const overview = pickOverview(zhItem, enItem);
+  const rawOverview = pickOverview(zhItem, enItem);
   // 实时日期判断：date <= 今天 = 热播中(online)；date > 今天 = 定档(schedule)
   const airDate = s.first_air_date || '';
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const isUpcoming = airDate > todayStr;
+  const origLang = s.original_language || (zhItem || enItem).original_language || '';
+  const isZhOrigin = origLang === 'zh' || origLang === 'cn';
+  const finalOverview = finalizeOverview({
+    overview: rawOverview,
+    zhTitle: title,
+    isZhOrigin,
+    genres,
+    date: airDate,
+    isMovie: false,
+    voteAvg: s.vote_average,
+    voteCount: s.vote_count,
+    isDoc: type === 'doc'
+  });
   return {
     id: 'tmdb-tv-' + s.id,
     date: airDate,
@@ -97,12 +155,12 @@ function mapShow(zhItem, enItem, genreNames) {
     event: isUpcoming ? 'schedule' : 'online',
     status: isUpcoming ? 'pending' : 'done',
     title: `《${title}》`,
-    summary: zhSummary(overview),
+    summary: zhSummary(finalOverview),
     source: 'TMDB',
     sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
     poster: s.poster_path ? IMG + s.poster_path : '',
     detail: {
-      intro: overview,
+      intro: finalOverview,
       cast: genres || '暂无',
       platform: `TMDB 评分：${s.vote_average.toFixed(1)}（${s.vote_count} 人评价）`,
       ep: (s.origin_country || []).includes('CN') ? '华语内容' : '海外内容'
@@ -197,7 +255,22 @@ export async function onRequestGet(context) {
       }
       const genres = gids.map(id => mg[id]).filter(Boolean).join(' / ');
       const title = pickTitle(m, en, true);
-      const overview = pickOverview(m, en);
+      const rawOverview = pickOverview(m, en);
+      const origLang = m.original_language || en.original_language || '';
+      const isZhOrigin = origLang === 'zh' || origLang === 'cn';
+      const voteAvg = m.vote_average || en.vote_average || 0;
+      const voteCount = m.vote_count || en.vote_count || 0;
+      const date = m.release_date || en.release_date;
+      const finalOverview = finalizeOverview({
+        overview: rawOverview,
+        zhTitle: title,
+        isZhOrigin,
+        genres,
+        date,
+        isMovie: true,
+        voteAvg,
+        voteCount
+      });
       items.push({
         id: 'tmdb-movie-' + m.id,
         date: m.release_date,
@@ -205,15 +278,15 @@ export async function onRequestGet(context) {
         event: 'online',
         status: 'done',
         title: `《${title}》`,
-        summary: zhSummary(overview),
+        summary: zhSummary(finalOverview),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: (m.poster_path || en.poster_path) ? IMG + (m.poster_path || en.poster_path) : '',
         detail: {
-          intro: overview,
+          intro: finalOverview,
           cast: genres || '暂无',
-          platform: `TMDB 评分：${(m.vote_average || en.vote_average || 0).toFixed(1)}（${m.vote_count || en.vote_count || 0} 人评价）`,
-          ep: (m.original_language || en.original_language) === 'zh' ? '华语影片' : '外语影片'
+          platform: `TMDB 评分：${voteAvg.toFixed(1)}（${voteCount} 人评价）`,
+          ep: isZhOrigin ? '华语影片' : '外语影片'
         }
       });
     });
@@ -229,24 +302,39 @@ export async function onRequestGet(context) {
       }
       const genres = gids.map(id => mg[id]).filter(Boolean).join(' / ');
       const title = pickTitle(m, en, true);
-      const overview = pickOverview(m, en);
-      const isPast = new Date(m.release_date || en.release_date) < new Date();
+      const rawOverview = pickOverview(m, en);
+      const origLang = m.original_language || en.original_language || '';
+      const isZhOrigin = origLang === 'zh' || origLang === 'cn';
+      const voteAvg = m.vote_average || en.vote_average || 0;
+      const voteCount = m.vote_count || en.vote_count || 0;
+      const date = m.release_date || en.release_date;
+      const finalOverview = finalizeOverview({
+        overview: rawOverview,
+        zhTitle: title,
+        isZhOrigin,
+        genres,
+        date,
+        isMovie: true,
+        voteAvg,
+        voteCount
+      });
+      const isPast = new Date(date) < new Date();
       items.push({
         id: 'tmdb-movie-' + m.id,
-        date: m.release_date || en.release_date,
+        date: date,
         type,
         event: isPast ? 'online' : 'schedule',
         status: isPast ? 'done' : 'pending',
         title: `《${title}》`,
-        summary: zhSummary(overview),
+        summary: zhSummary(finalOverview),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: (m.poster_path || en.poster_path) ? IMG + (m.poster_path || en.poster_path) : '',
         detail: {
-          intro: overview,
+          intro: finalOverview,
           cast: genres || '暂无',
-          platform: `TMDB 评分：${(m.vote_average || en.vote_average || 0).toFixed(1)}（${m.vote_count || en.vote_count || 0} 人评价）`,
-          ep: (m.original_language || en.original_language) === 'zh' ? '华语影片' : '外语影片'
+          platform: `TMDB 评分：${voteAvg.toFixed(1)}（${voteCount} 人评价）`,
+          ep: isZhOrigin ? '华语影片' : '外语影片'
         }
       });
     });
@@ -276,23 +364,39 @@ export async function onRequestGet(context) {
       const gids = m.genre_ids || en.genre_ids || [];
       const genres = gids.map(id => mg[id]).filter(Boolean).join(' / ');
       const title = pickTitle(m, en, true);
-      const overview = pickOverview(m, en);
+      const rawOverview = pickOverview(m, en);
+      const origLang = m.original_language || en.original_language || '';
+      const isZhOrigin = origLang === 'zh' || origLang === 'cn';
+      const voteAvg = m.vote_average || en.vote_average || 0;
+      const voteCount = m.vote_count || en.vote_count || 0;
+      const date = m.release_date || en.release_date;
+      const finalOverview = finalizeOverview({
+        overview: rawOverview,
+        zhTitle: title,
+        isZhOrigin,
+        genres: genres || '纪录',
+        date,
+        isMovie: true,
+        voteAvg,
+        voteCount,
+        isDoc: true
+      });
       items.push({
         id: 'tmdb-docmovie-' + m.id,
-        date: m.release_date || en.release_date,
+        date: date,
         type: 'doc',
         event: 'online',
         status: 'done',
         title: `《${title}》`,
-        summary: zhSummary(overview),
+        summary: zhSummary(finalOverview),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: (m.poster_path || en.poster_path) ? IMG + (m.poster_path || en.poster_path) : '',
         detail: {
-          intro: overview,
+          intro: finalOverview,
           cast: genres || '纪录',
-          platform: `TMDB 评分：${(m.vote_average || en.vote_average || 0).toFixed(1)}（${m.vote_count || en.vote_count || 0} 人评价）`,
-          ep: (m.original_language || en.original_language) === 'zh' ? '华语纪录片' : '海外纪录片'
+          platform: `TMDB 评分：${voteAvg.toFixed(1)}（${voteCount} 人评价）`,
+          ep: isZhOrigin ? '华语纪录片' : '海外纪录片'
         }
       });
     });
