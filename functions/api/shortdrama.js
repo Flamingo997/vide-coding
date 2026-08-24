@@ -1,70 +1,142 @@
-// Cloudflare Pages Function：短剧数据接口（来源 kuleu.com，无需key，免费）
-// 因 kuleu 仅支持关键词搜索，采用多题材词轮询聚合出「短剧上新清单」。
-// GET /api/shortdrama?limit=12
-
-// 常见短剧题材关键词，用于轮询搜索聚合
-const KEYWORDS = [
-  '恋爱', '穿越', '复仇', '战神', '逆袭',
-  '闪婚', '总裁', '甜宠', '千金', '豪门'
-];
+// Cloudflare Pages Function：短剧数据接口（来源 HOSHIYOMI Aggregation API）
+// HOSHIYOMI 是一个短剧聚合 API，统一接入 16+ 短剧平台（DramaBox / ReelShort / GoodShort / ShortMax 等）
+// 文档：https://api.hoshiyomi.my.id/docs
+// GET /api/shortdrama?limit=16
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
 
-async function search(keyword) {
-  const url = 'https://api.kuleu.com/api/action?text=' + encodeURIComponent(keyword);
-  const r = await fetch(url, {
-    headers: { 'User-Agent': UA, 'Referer': 'https://www.kuleu.com/' }
-  });
-  if (!r.ok) return [];
-  const j = await r.json();
-  if (j && j.code === 200 && Array.isArray(j.data)) return j.data;
-  return [];
+// 8 个数据量大且稳定的短剧平台
+const PLATFORMS = [
+  'dramabox', 'reelshort', 'goodshort', 'shortmax',
+  'dramabite', 'pinedrama', 'moboreels', 'netshort'
+];
+
+// 每个平台请求的语言（中文优先，次英文，次印尼文），保证中文短剧有中文名，海外短剧有英文名
+const LANGS = ['zh', 'en'];
+
+function todayStr() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-// 由短剧名提取纯剧名（去掉编号/集数/标签后缀），如 "8527-机场爱情故事（100集）" → "机场爱情故事"
-function cleanName(raw) {
-  let name = raw.replace(/^\s*\d+[-.\s]*/, '').trim();          // 去掉开头编号
-  name = name.replace(/（\d+集）.*$/g, '');                       // 去掉（XX集）及后续
-  name = name.replace(/[（(]\d+集[)）].*$/, '');
-  name = name.replace(/[-–—].*$/, '').trim();
-  return name;
+// 解析 HOSHIYOMI 条目日期：优先 created_at / updated_at，兜底为当天
+function pickDate(item) {
+  const candidates = [item.created_at, item.updated_at, item.release_date, item.air_date, item.date];
+  for (const c of candidates) {
+    if (!c) continue;
+    const m = String(c).match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+    if (m) {
+      const [_, y, mo, d] = m;
+      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+  return todayStr();
 }
 
-function fmtDate(addtime) {
-  const m = (addtime || '').match(/(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] : new Date().toISOString().slice(0, 10);
+// 请求单个 HOSHIYOMI 平台 + endpoint + lang
+async function fetchHoshiyomi(apiKey, platform, endpoint, lang) {
+  const url = `https://api.hoshiyomi.my.id/api/${platform}/${endpoint}?lang=${lang}&page=1`;
+  try {
+    const r = await fetch(url, {
+      headers: {
+        'X-API-Key': apiKey,
+        'User-Agent': UA,
+        'Accept': 'application/json'
+      },
+      cf: { cacheTtl: 600, cacheEverything: true }
+    });
+    if (!r.ok) return [];
+    const j = await r.json();
+    // HOSHIYOMI 返回格式：{ items: [...] } 或 { data: [...] }
+    const arr = j && (j.items || j.data);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
 }
+
+// 去掉剧名首尾多余符号和集数后缀，保持中文书名号内部纯内容
+function cleanTitle(raw) {
+  if (!raw) return '';
+  let t = String(raw).trim();
+  t = t.replace(/^[\s\-—–_·•.。,，、:：;；!！?？]+/g, '');
+  t = t.replace(/[\s\-—–_·•.。,，、:：;；!！?？]+$/g, '');
+  t = t.replace(/\s*\(?（?\s*\d+\s*(集|EP| episodes?)\s*\)?）?.*$/i, '');
+  return t.trim();
+}
+
+const POSTER_BASE = 'https://image.tmdb.org/t/p/w500';
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '12', 10) || 12, 30);
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '16', 10) || 16, 40);
+  const apiKey = (context.env && context.env.HOSHIYOMI_API_KEY) || 'HOSHIYOMI-FREE-d45bc973';
 
   try {
-    // 批量并发搜索并聚合
-    const batches = await Promise.all(KEYWORDS.map(search));
+    // 多平台 + 多接口 + 多语言 并发请求，最大化覆盖面
+    // 每个平台同时拉取 trending（热门） 和 latest（最新）
+    const tasks = [];
+    for (const p of PLATFORMS) {
+      for (const ep of ['trending', 'latest']) {
+        for (const lang of LANGS) {
+          tasks.push(fetchHoshiyomi(apiKey, p, ep, lang));
+        }
+      }
+    }
+    const batches = await Promise.all(tasks);
     const flat = batches.flat();
-    const seen = new Set();
+
+    // 以 title 为主键去重，优先保留有海报 + 有简介的版本
+    const map = new Map();
+    for (const it of flat) {
+      if (!it || (!it.title && !it.name)) continue;
+      const rawTitle = it.title || it.name || '';
+      const name = cleanTitle(rawTitle);
+      if (!name) continue;
+      const key = name.toLowerCase();
+      const old = map.get(key);
+      const poster = it.poster || it.poster_path || it.thumbnail || it.cover || it.image || '';
+      const desc = it.description || it.overview || it.synopsis || it.intro || '';
+      const score = (poster ? 2 : 0) + (desc ? 1 : 0) + (Number(it.episodes || 0) > 0 ? 1 : 0);
+      if (!old || score > old.score) {
+        map.set(key, {
+          it, name, poster, desc, score,
+          episodes: it.episodes || it.total_episodes || '',
+          rating: it.rating || it.score || ''
+        });
+      }
+    }
+
+    // 转为统一结构，保证至少 limit 条
     const items = [];
-    for (const d of flat) {
-      const name = cleanName(d.name || '');
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      const ep = (d.name || '').match(/(\d+)\s*集/) ? '' : '';
+    for (const { it, name, poster, desc, episodes, rating } of map.values()) {
+      const date = pickDate(it);
+      const epText = episodes ? `共 ${episodes} 集` : '集数见详情';
+      const rtText = rating ? `，评分 ${rating}` : '';
+      const intro = desc
+        ? `${name}${rtText}。${desc}`
+        : `${name}${rtText}，点击查看来源平台播放链接。`;
+      const posterUrl = poster
+        ? (poster.startsWith('http') ? poster : `${POSTER_BASE}${poster.startsWith('/') ? '' : '/'}${poster}`)
+        : '';
       items.push({
-        date: fmtDate(d.addtime),
+        date,
         type: 'duan',
         event: 'online',
         status: 'released',
         title: `《${name}》短剧上新`,
-        summary: (d.name || name) + '，海量短剧持续上新。',
-        source: 'kuleu',
-        sourceLink: d.viewlink || '#',
-        poster: '',
+        summary: intro.length > 60 ? intro.slice(0, 60) + '…' : intro,
+        source: 'HOSHIYOMI',
+        sourceLink: it.url || it.link || it.viewlink || it.source_url || '#',
+        poster: posterUrl,
         detail: {
-          intro: (d.name || name) + '，点击查看资源链接。',
+          intro,
           cast: '短剧',
-          platform: 'kuleu 短剧库 · ' + (ep || '全网短剧'),
-          ep: (d.name || '').match(/(\d+)\s*集/) ? '共 ' + RegExp.$1 + ' 集' : '集数见详情'
+          platform: `HOSHIYOMI 短剧聚合 · ${epText}`,
+          ep: epText
         }
       });
       if (items.length >= limit) break;
@@ -74,7 +146,7 @@ export async function onRequestGet(context) {
       code: 0,
       message: 'ok',
       total: items.length,
-      attribution: '数据来源 kuleu.com（短剧库）',
+      attribution: '数据来源 HOSHIYOMI（聚合 DramaBox / ReelShort / GoodShort / ShortMax 等16+平台）',
       data: items
     }), {
       headers: {
