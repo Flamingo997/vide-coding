@@ -413,6 +413,29 @@ export async function onRequestGet(context) {
       .filter(n => !BLOCK_TITLES.some(bt => (n.summary || '').includes(bt)))
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
+    // ===== 华语影片简介补全：列表接口返回的 overview 为空或英文时，调详情接口拉中文简介 =====
+    const cnNeedFetch = list.filter(n => {
+      const isZh = n.detail && (n.detail.ep === '华语影片' || n.detail.ep === '华语纪录片' || n.detail.ep === '华语内容');
+      if (!isZh) return false;
+      const ov = n.detail.intro || '';
+      return !ov || !hasChinese(ov);
+    });
+    if (cnNeedFetch.length > 0) {
+      await Promise.all(cnNeedFetch.map(async n => {
+        try {
+          const rawId = n.id.replace(/^tmdb-(movie|tv|docmovie)-/, '');
+          const isMovie = /^tmdb-(movie|docmovie)-/.test(n.id);
+          const endpoint = isMovie ? `/movie/${rawId}` : `/tv/${rawId}`;
+          const detail = await tmdb(endpoint, key, 'zh-CN');
+          if (detail.overview && hasChinese(detail.overview)) {
+            const ov = detail.overview.replace(/\s+/g, ' ').trim();
+            n.summary = zhSummary(ov);
+            n.detail.intro = ov;
+          }
+        } catch (_) { /* 静默失败，保留原简介 */ }
+      }));
+    }
+
     const coverage = {};
     list.forEach(n => { coverage[n.type] = (coverage[n.type] || 0) + 1; });
 
