@@ -193,9 +193,14 @@
     return 300 + (h % 4700);
   }
 
-  function goView(view, type) {
+  // 待滚动定位的影片标题（renderTimeline 渲染完成后消费）
+  let pendingScrollTitle = null;
+
+  function goView(view, type, title) {
     currentView = view;
     currentType = type || 'all';
+    // 只有明确传了 title 才消费性定位，其他入口不设置
+    pendingScrollTitle = title || null;
     document.getElementById('homeView').hidden = view !== 'home';
     document.getElementById('tlView').hidden = view !== 'timeline';
 
@@ -219,8 +224,10 @@
       document.getElementById('tlTitle').textContent =
         currentType === 'all' ? '全量时间线' : TYPE_MAP[currentType].name;
       renderTimeline(document.getElementById('timeline'), { type: currentType, range: currentRange, keyword });
+    } else {
+      pendingScrollTitle = null; // 切首页就不需要了
+      window.scrollTo({ top: 0, behavior: 'auto' });
     }
-    window.scrollTo({ top: 0, behavior: 'auto' });
   }
 
   document.querySelectorAll('.nav-item, .more-menu a, .brand').forEach(el => {
@@ -319,6 +326,11 @@
     startAuto();
   }
 
+  // 将影片标题转换为安全的 HTML id（保留中文，仅替换空格和特殊符号为下划线）
+  function titleToId(title) {
+    return 'tl-' + String(title || '').replace(/[\s"'<>\\\/&?#=%\[\].，,。！!？?；;：:（）()【】《》~·@$^*+\-|`]/g, '_');
+  }
+
   function renderTimeline(container, opt) {
     const { type = 'all', range = 'all', keyword: kw = '', limit = 0 } = opt;
     let filtered = NEWS.filter(n => {
@@ -332,6 +344,7 @@
 
     if (filtered.length === 0) {
       container.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
+      pendingScrollTitle = null;
       return;
     }
 
@@ -350,8 +363,9 @@
           if (!t) return '';
           const time = TIMES[NEWS.indexOf(n) % TIMES.length];
           const nodeCls = 'tl-node';
+          const elId = titleToId(n.title);
           return `
-            <div class="tl-item" style="--tc:${t.color}">
+            <div class="tl-item" style="--tc:${t.color}" id="${elId}" data-title="${n.title.replace(/"/g, '&quot;')}">
               <div class="${nodeCls}"></div>
               <article class="card" onclick="toggleCard(this)">
                 <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy"></div>
@@ -378,6 +392,31 @@
         }).join('')}
       </section>
     `).join('');
+
+    // ========== 渲染完成：如果有待定位的影片标题，滚到该元素并短暂高亮 ==========
+    if (pendingScrollTitle) {
+      const target = document.getElementById(titleToId(pendingScrollTitle));
+      const title = pendingScrollTitle; // 先存一份再清空
+      pendingScrollTitle = null;
+      if (target) {
+        // 滚动到视口中央偏上一点，留出上方空间
+        requestAnimationFrame(() => {
+          const rect = target.getBoundingClientRect();
+          const scrollTop = window.pageYOffset + rect.top - 120;
+          window.scrollTo({ top: scrollTop, behavior: 'smooth' });
+          // 给卡片加 1.8 秒的高亮闪烁效果
+          const card = target.querySelector('.card');
+          if (card) {
+            card.animate([
+              { boxShadow: '0 0 0 3px var(--tc), 0 10px 30px rgba(47,134,255,0.35)', transform: 'translateY(0) scale(1)' },
+              { boxShadow: '0 0 0 4px var(--tc), 0 16px 40px rgba(47,134,255,0.45)', transform: 'translateY(-2px) scale(1.01)' },
+              { boxShadow: '0 0 0 3px var(--tc), 0 10px 30px rgba(47,134,255,0.35)', transform: 'translateY(0) scale(1)' },
+              { boxShadow: '0 0 0 0 rgba(47,134,255,0)', transform: 'translateY(0) scale(1)' }
+            ], { duration: 1800, easing: 'ease-out' });
+          }
+        });
+      }
+    }
   }
 
   window.toggleCard = function (card) {
@@ -410,8 +449,9 @@
             ${items.map(n => {
               const cleanTitle = n.title.replace(/》.*$/, '》');
               const desc = oneLineSummary(n.summary);
+              const safeTitle = n.title.replace(/"/g, '&quot;');
               return `
-              <div class="cat-card" data-type="${type}">
+              <div class="cat-card" data-type="${type}" data-title="${safeTitle}">
                 <div class="cat-poster-wrap">
                   <img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy">
                 </div>
@@ -424,8 +464,13 @@
           </div>
         </section>`;
     }).join('');
-    document.querySelectorAll('.more-link, .cat-card').forEach(el => {
+    // 「查看更多」仅跳转该分类时间线（滚到顶部）
+    document.querySelectorAll('.more-link').forEach(el => {
       el.addEventListener('click', () => goView('timeline', el.dataset.type));
+    });
+    // 首页卡片：跳转分类时间线 + 滚动定位到对应的影片条目并高亮
+    document.querySelectorAll('.cat-card').forEach(el => {
+      el.addEventListener('click', () => goView('timeline', el.dataset.type, el.dataset.title));
     });
   }
 
