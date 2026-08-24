@@ -116,6 +116,7 @@ export async function onRequestGet(context) {
       tvPopularZh, tvPopularEn,
       docMoviesZh, docMoviesEn,
       docTvZh, docTvEn,
+      showZh, showEn,
       movieGenres, tvGenres
     ] = await Promise.all([
       tmdb('/movie/now_playing?region=CN&page=1', key, 'zh-CN'),
@@ -130,6 +131,8 @@ export async function onRequestGet(context) {
       tmdb('/discover/movie?with_genres=99&sort_by=popularity.desc&page=1', key, 'en-US'),
       tmdb('/discover/tv?with_genres=99&sort_by=popularity.desc&page=1', key, 'zh-CN'),
       tmdb('/discover/tv?with_genres=99&sort_by=popularity.desc&page=1', key, 'en-US'),
+      tmdb('/discover/tv?with_genres=10764&sort_by=popularity.desc&page=1', key, 'zh-CN'),
+      tmdb('/discover/tv?with_genres=10764&sort_by=popularity.desc&page=1', key, 'en-US'),
       tmdb('/genre/movie/list', key, 'zh-CN'),
       tmdb('/genre/tv/list', key, 'zh-CN')
     ]);
@@ -147,6 +150,7 @@ export async function onRequestGet(context) {
     (onAirEn.results || []).forEach(s => enTvMap.set(s.id, s));
     (tvPopularEn.results || []).forEach(s => enTvMap.set(s.id, s));
     (docTvEn.results || []).forEach(s => enTvMap.set(s.id, s));
+    (showEn.results || []).forEach(s => enTvMap.set(s.id, s));
 
     const items = [];
     const seen = new Set();
@@ -218,7 +222,7 @@ export async function onRequestGet(context) {
 
     // 正在播出 + 热门剧集
     const tvSeen = new Set();
-    [...(onAirZh.results || []), ...(tvPopularZh.results || [])].forEach(s => {
+    [...(onAirZh.results || []), ...(tvPopularZh.results || []), ...(showZh.results || [])].forEach(s => {
       if (tvSeen.has(s.id)) return;
       tvSeen.add(s.id);
       const en = enTvMap.get(s.id) || {};
