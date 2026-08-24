@@ -686,7 +686,9 @@
       ]).then(([tmdbRes, shortRes]) => {
         const tmdbData = (tmdbRes.status === 'fulfilled' && tmdbRes.value && tmdbRes.value.code === 0 && tmdbRes.value.data) || [];
         const shortData = (shortRes.status === 'fulfilled' && shortRes.value && shortRes.value.code === 0 && shortRes.value.data) || [];
-        NEWS = tmdbData.concat(shortData);
+        // 合并：TMDB 各分类 + HOSHIYOMI 短剧接口 + data.json 里的静态短剧条目
+        const staticDuan = (data.NEWS || []).filter(n => n.type === 'duan');
+        NEWS = tmdbData.concat(shortData).concat(staticDuan);
       });
     })
     .then(() => {
