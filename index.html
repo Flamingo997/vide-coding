@@ -385,18 +385,27 @@
   };
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
-  function oneLineSummary(text) {
-    if (!text || text.length < 2) return '暂无简介';
+  function oneLineSummary(text, title) {
+    if (!text || text.length < 2) {
+      console.log('[简介生成] 跳过: 空文本', '|| title=', title);
+      return '暂无简介';
+    }
     let s = text.replace(/^《.+?》/, '').trim();
     s = s.replace(/[（(].+?[)）]/g, '').trim();
     s = s.replace(/^(本剧|本片|该剧|该影片|影片|故事)?(讲述(了)?|描绘(了)?|展现(了)?|记录(了)?)?/, '');
     const clauses = s.split(/[，,。.！!？?；;]/);
-    for (const c of clauses) {
-      const t = c.trim();
+    console.log('[简介生成] 原文:', text.slice(0, 40) + '…', '|| 去杂后:', s.slice(0, 40) + '…', '|| 分句数:', clauses.length, '|| title=', title);
+    for (let i = 0; i < clauses.length; i++) {
+      const t = clauses[i].trim();
+      console.log('  [分句' + i + '] len=' + t.length + ' "' + t + '"' + (t.length >= 4 && t.length <= 18 ? ' ✓命中' : ''));
       if (t.length >= 4 && t.length <= 18) return t;
     }
     let first = (clauses[0] || s).trim();
-    if (first.length > 18) return first.slice(0, 18) + '…';
+    if (first.length > 18) {
+      console.log('  [兜底] 第一句超18字，截断:', first.slice(0, 18) + '…', '|| title=', title);
+      return first.slice(0, 18) + '…';
+    }
+    console.log('  [兜底] 使用第一句:', first || '(空)', '|| title=', title);
     return first || '暂无简介';
   }
   function renderCatGroups() {
@@ -415,7 +424,7 @@
           <div class="cat-grid">
             ${items.map(n => {
               const cleanTitle = n.title.replace(/》.*$/, '》');
-              const desc = oneLineSummary(n.summary);
+              const desc = oneLineSummary(n.summary, n.title);
               return `
               <div class="cat-card" data-type="${type}">
                 <div class="cat-poster-wrap">
