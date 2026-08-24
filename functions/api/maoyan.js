@@ -6,28 +6,50 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 export async function onRequestGet(context) {
   try {
-    // 猫眼实时票房列表接口
-    const url = 'https://piaofang.maoyan.com/getBoxList?date=1&isSplit=true';
-    const r = await fetch(url, {
-      headers: {
-        'User-Agent': UA,
-        'Referer': 'https://piaofang.maoyan.com/dashboard/movie',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'zh-CN,zh;q=0.9'
-      }
-    });
+    // 尝试多个猫眼接口端点
+    const endpoints = [
+      'https://piaofang.maoyan.com/getBoxList?date=1&isSplit=true',
+      'https://piaofang.maoyan.com/dashboard-ajax/movie'
+    ];
 
-    if (!r.ok) {
-      return new Response(JSON.stringify({ code: r.status, message: '猫眼接口请求失败' }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      });
+    let j = null;
+    let rawList = [];
+
+    for (const url of endpoints) {
+      try {
+        const r = await fetch(url, {
+          headers: {
+            'User-Agent': UA,
+            'Referer': 'https://piaofang.maoyan.com/dashboard/movie',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-CN,zh;q=0.9'
+          }
+        });
+        if (!r.ok) continue;
+        j = await r.json();
+        // 尝试多种返回格式
+        rawList = (j?.data?.list) || (j?.movieList?.list) || (j?.data?.movieList?.list) || [];
+        if (rawList.length > 0) break;
+      } catch (e) {
+        continue;
+      }
     }
 
-    const j = await r.json();
-
-    // 提取票房列表
-    const rawList = j?.data?.list || [];
+    // 如果仍为空，返回原始响应以便调试
+    if (rawList.length === 0) {
+      return new Response(JSON.stringify({
+        code: 0,
+        message: '猫眼返回数据为空或格式不匹配',
+        debug: { keys: j ? Object.keys(j) : [], sample: j ? JSON.stringify(j).slice(0, 500) : null },
+        movies: [],
+        source: '猫眼专业版'
+      }), {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
 
     // 解析每部电影的票房数据
     const movies = rawList.map((item, idx) => {
