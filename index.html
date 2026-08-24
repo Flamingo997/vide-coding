@@ -530,7 +530,6 @@
     let s = text.replace(/^《.+?》/, '').trim();
     const m = s.match(/^(.+?)[。.!?！？]/);
     if (m && m[1].length > 3) s = m[1].trim();
-    if (s.length > 18) return s.slice(0, 18) + '…';
     return s;
   }
   function renderCatGroups() {
