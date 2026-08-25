@@ -54,6 +54,7 @@
     <a class="nav-item" data-view="timeline" data-type="anime"><span class="nav-dot" style="background:#FFB800"></span>动漫</a>
     <a class="nav-item optional" data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
     <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
+    <a class="nav-item fav-nav" data-view="favorites" id="favNav">♡ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
         <a data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
@@ -158,6 +159,17 @@
   </div>
 </main>
 
+<!-- 我的收藏夹视图 -->
+<main id="favView" hidden>
+  <div class="tl-page">
+    <h1 class="tl-title">我的收藏夹 <span class="fav-count" id="favCount">0</span></h1>
+    <div class="fav-filter-row" id="favFilterRow">
+      <button class="pill active" data-fav-type="all">全部</button>
+    </div>
+    <div class="timeline" id="favTimeline"></div>
+  </div>
+</main>
+
 <footer class="footer">
   <p>本页面影视资讯来自环球网·环球影讯（ent.huanqiu.com/film），票房数据来自猫眼专业版（piaofang.maoyan.com），影片资料来自 TMDB（themoviedb.org）。API 异常时显示本地模拟数据，仅供演示，不作为实际观影决策依据。</p>
   <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
@@ -173,6 +185,70 @@
   let currentType = 'all';
   let currentRange = 'all';
   let keyword = '';
+
+  // ============ 收藏夹核心逻辑（localStorage 持久化） ============
+  const FAV_KEY = 'yingxinxian_favorites';
+  function getFavorites() {
+    try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch (_) { return []; }
+  }
+  function saveFavorites(list) {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(list)); } catch (_) {}
+  }
+  function isFavorited(id) {
+    return getFavorites().some(f => f.id === id);
+  }
+  function toggleFavorite(item) {
+    const list = getFavorites();
+    const idx = list.findIndex(f => f.id === item.id);
+    if (idx >= 0) {
+      list.splice(idx, 1);
+    } else {
+      list.unshift({ ...item, savedAt: Date.now() });
+    }
+    saveFavorites(list);
+    updateFavBadge();
+    return idx < 0; // true=刚收藏, false=刚取消
+  }
+  function updateFavBadge() {
+    const count = getFavorites().length;
+    const badge = document.getElementById('favBadge');
+    const countEl = document.getElementById('favCount');
+    if (badge) {
+      badge.textContent = count;
+      badge.hidden = count === 0;
+    }
+    if (countEl) countEl.textContent = count;
+  }
+  // 生成收藏按钮 HTML
+  function favBtnHTML(item) {
+    const favorited = isFavorited(item.id);
+    return `<button class="fav-btn${favorited ? ' favorited' : ''}" onclick="handleFavClick(event, this)" data-item='${escapeItemJSON(item)}'>${favorited ? '♥ 已收藏' : '♡ 收藏'}</button>`;
+  }
+  // 转义 item 为安全的 JSON 属性值
+  function escapeItemJSON(item) {
+    return JSON.stringify(item).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+  }
+  // 收藏按钮点击处理
+  window.handleFavClick = function(ev, btn) {
+    ev.stopPropagation();
+    const raw = btn.getAttribute('data-item') || '';
+    const json = raw.replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+    let item;
+    try { item = JSON.parse(json); } catch (_) { return; }
+    const isFav = toggleFavorite(item);
+    btn.textContent = isFav ? '♥ 已收藏' : '♡ 收藏';
+    btn.classList.toggle('favorited', isFav);
+    // 如果在收藏夹视图里取消收藏，移除该卡片
+    if (!isFav && currentView === 'favorites') {
+      const card = btn.closest('.tl-item');
+      if (card) {
+        card.style.transition = 'opacity 0.3s, transform 0.3s';
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.95)';
+        setTimeout(() => { card.remove(); updateFavBadge(); }, 300);
+      }
+    }
+  };
 
   // ======= 统一日期工具：彻底规避 UTC 时区偏差 + NaN 污染 sort =======
   // 1) parseYMDLocal(str): 手动拆分 Y/M/D，用本地时区 new Date(y, m-1, d) 构造
@@ -276,6 +352,7 @@
     // 只有明确传了 title 才消费性定位，其他入口不设置
     pendingScrollTitle = title || null;
     document.getElementById('homeView').hidden = view !== 'home';
+    document.getElementById('favView').hidden = view !== 'favorites';
     document.getElementById('tlView').hidden = view !== 'timeline';
 
     // 视图切换过渡动画（淡入 + 上移）
@@ -301,6 +378,9 @@
     } else {
       pendingScrollTitle = null; // 切首页就不需要了
       window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+    if (view === 'favorites') {
+      renderFavorites();
     }
   }
 
@@ -506,7 +586,10 @@
                   <p class="card-summary">${truncateText(n.summary, 200)}</p>
                   <div class="card-foot">
                     <span class="source">来源：${n.source}</span>
-                    <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 →</a>
+                    <div class="card-foot-btns">
+                      ${favBtnHTML(n)}
+                      <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 -></a>
+                    </div>
                   </div>
                   <div class="detail">
                     <p>${truncateText(n.detail.intro, 200)}</p>
@@ -799,6 +882,7 @@
       initBanner();
       renderCatGroups();
       renderSidebar();
+      updateFavBadge();
     });
 </script>
 </body>

@@ -882,3 +882,23 @@ body {
   .home-layout { padding: 0 16px; margin: 16px auto; gap: 20px; }
   .side-card { padding: 16px; }
 }
+
+/* 收藏夹 */
+.fav-nav { cursor: pointer; }
+.fav-badge {
+  display: inline-block; min-width: 16px; height: 16px; line-height: 16px;
+  text-align: center; font-size: 11px; background: #FF5722; color: #fff;
+  border-radius: 8px; padding: 0 4px; margin-left: 2px; vertical-align: top;
+}
+.fav-count { font-size: 14px; color: #999; font-weight: 400; margin-left: 4px; }
+.fav-filter-row { margin-bottom: 16px; display: flex; gap: 8px; }
+.card-foot-btns { display: flex; gap: 8px; align-items: center; }
+.fav-btn {
+  font-size: 12px; padding: 4px 10px; border: 1px solid #ddd; border-radius: 14px;
+  background: #fff; color: #666; cursor: pointer; transition: all 0.2s;
+  white-space: nowrap;
+}
+.fav-btn:hover { border-color: #FF7D00; color: #FF7D00; }
+.fav-btn.favorited {
+  background: #FFF0E5; border-color: #FF7D00; color: #FF7D00;
+}
