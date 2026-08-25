@@ -921,7 +921,7 @@ body {
   font-size: 14px; margin-bottom: 12px; box-sizing: border-box;
 }
 .login-modal-btns { display: flex; gap: 8px; }
-.login-btn-cancel, .login-btn-ok {
+.login-btn-cancel, .login-btn-ok, .login-btn-reg {
   flex: 1; padding: 10px; border: none; border-radius: 6px;
   font-size: 14px; cursor: pointer;
 }
