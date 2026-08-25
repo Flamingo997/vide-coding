@@ -4,8 +4,6 @@
 // DELETE /api/favorites          -> 取消收藏 { itemId }
 // GET    /api/favorites/count    -> 获取收藏数量（未登录也返回 0）
 
-import { verifySession } from './auth.js';
-
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -16,6 +14,24 @@ function json(obj, status = 200) {
   });
 }
 
+function getCookie(cookieHeader, name) {
+  if (!cookieHeader) return null;
+  const m = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return m ? m[1] : null;
+}
+
+async function verifySession(db, request) {
+  const token = getCookie(request.headers.get('Cookie'), 'session');
+  if (!token) return null;
+  const row = await db.prepare('SELECT user_id, expires_at FROM sessions WHERE token = ?').bind(token).first();
+  if (!row) return null;
+  if (Date.now() > row.expires_at) {
+    await db.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
+    return null;
+  }
+  return row.user_id;
+}
+
 export async function onRequestGet(context) {
   const db = context.env.DB;
   if (!db) {
@@ -24,12 +40,10 @@ export async function onRequestGet(context) {
 
   const userId = await verifySession(db, context.request);
 
-  // 未登录返回空列表
   if (!userId) {
     return json({ code: 0, loggedIn: false, favorites: [], count: 0 });
   }
 
-  // 查询收藏列表
   const path = new URL(context.request.url).pathname;
   if (path.endsWith('/count')) {
     const row = await db.prepare('SELECT COUNT(*) as cnt FROM favorites WHERE user_id = ?').bind(userId).first();
@@ -76,7 +90,6 @@ export async function onRequestPost(context) {
 
     return json({ code: 0, message: '收藏成功', favorited: true });
   } catch (e) {
-    // UNIQUE 约束冲突 = 已收藏
     if (String(e.message).includes('UNIQUE')) {
       return json({ code: 0, message: '已收藏过', favorited: true });
     }
@@ -95,11 +108,9 @@ export async function onRequestDelete(context) {
     return json({ code: 401, message: '请先登录' }, 401);
   }
 
-  // DELETE body 不标准，用 URL 参数或 query
   const url = new URL(context.request.url);
   const itemId = url.searchParams.get('itemId');
   if (!itemId) {
-    // 尝试从 body 读
     const body = await context.request.json().catch(() => ({}));
     const bid = body.itemId;
     if (!bid) return json({ code: 400, message: '缺少 itemId' }, 400);
@@ -111,7 +122,6 @@ export async function onRequestDelete(context) {
   return json({ code: 0, message: '已取消收藏', favorited: false });
 }
 
-// OPTIONS for CORS
 export async function onRequestOptions() {
   return new Response(null, {
     headers: {
