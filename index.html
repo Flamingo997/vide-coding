@@ -55,8 +55,6 @@
     <a class="nav-item optional" data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
     <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
     <a class="nav-item fav-nav" data-view="favorites" id="favNav">★ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
-    <a class="nav-item login-nav" id="loginNav" onclick="openLoginModal()">🔑 <span class="login-label">登录</span></a>
-    <a class="nav-item logout-nav" id="logoutNav" onclick="doSiteLogout()" hidden>🚪 <span class="logout-label">退出</span></a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
         <a data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
@@ -104,7 +102,13 @@
           今日票房
         </h3>
         <div id="boxOffice"></div>
-        <a class="side-link" id="boxOfficeMore">查看更多电影资讯 →</a>
+        <a class="side-link" id="boxOfficeMore">查看更多电影资讯 -></a>
+      </div>
+
+      <div class="side-card auth-side-card">
+        <button class="side-auth-btn" id="loginBtn" onclick="openLoginModal()">登录</button>
+        <button class="side-auth-btn side-auth-logout" id="logoutBtn" onclick="doSiteLogout()" hidden>退出登录</button>
+        <span class="side-auth-user" id="authUserLabel"></span>
       </div>
 
       <div class="side-card market-card" id="marketCard" title="点击查看猫眼专业版票房大盘">
@@ -363,20 +367,28 @@
 
   // ============ 登录/注册/登出逻辑 ============
   function setNavLoggedIn(userId) {
-    const loginNav = document.getElementById('loginNav');
-    const logoutNav = document.getElementById('logoutNav');
-    loginNav.innerHTML = '👤 <span class="login-label">' + userId + '</span>';
-    loginNav.onclick = null;
-    loginNav.style.cursor = 'default';
-    logoutNav.hidden = false;
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const userLabel = document.getElementById('authUserLabel');
+    loginBtn.textContent = '已登录：' + userId;
+    loginBtn.onclick = null;
+    loginBtn.style.cursor = 'default';
+    loginBtn.style.background = '#f5f5f5';
+    loginBtn.style.color = '#666';
+    logoutBtn.hidden = false;
+    userLabel.textContent = '';
   }
   function setNavLoggedOut() {
-    const loginNav = document.getElementById('loginNav');
-    const logoutNav = document.getElementById('logoutNav');
-    loginNav.innerHTML = '🔑 <span class="login-label">登录</span>';
-    loginNav.onclick = openLoginModal;
-    loginNav.style.cursor = 'pointer';
-    logoutNav.hidden = true;
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const userLabel = document.getElementById('authUserLabel');
+    loginBtn.textContent = '登录';
+    loginBtn.onclick = openLoginModal;
+    loginBtn.style.cursor = 'pointer';
+    loginBtn.style.background = '';
+    loginBtn.style.color = '';
+    logoutBtn.hidden = true;
+    userLabel.textContent = '';
   }
 
   window.openLoginModal = function() {
@@ -448,6 +460,7 @@
     }
   };
   async function doSiteLogout() {
+    if (!FAV_LOGGED_IN) return; // 未登录不跳转
     await fetch('/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
