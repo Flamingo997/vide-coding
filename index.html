@@ -374,12 +374,16 @@
     if (!pwd) { msgEl.textContent = '请输入密码'; return; }
     msgEl.textContent = '登录中...';
     try {
-      const r = await fetch('/api/auth/login', {
+      const r = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({ password: pwd })
       });
+      if (!r.ok) {
+        msgEl.textContent = '服务器返回 ' + r.status;
+        return;
+      }
       const data = await r.json();
       if (data.code === 0) {
         msgEl.textContent = '登录成功！';
@@ -400,7 +404,7 @@
     }
   };
   async function doSiteLogout() {
-    await fetch('/api/auth/login', {
+    await fetch('/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -417,7 +421,7 @@
   // 页面加载时检查登录状态
   (async function checkLoginOnLoad() {
     try {
-      const r = await fetch('/api/auth/check', { credentials: 'same-origin' });
+      const r = await fetch('/api/auth', { credentials: 'same-origin' });
       const data = await r.json();
       if (data.loggedIn) {
         const nav = document.getElementById('loginNav');
