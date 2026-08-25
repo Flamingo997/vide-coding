@@ -186,31 +186,118 @@
   let currentRange = 'all';
   let keyword = '';
 
-  // ============ 收藏夹核心逻辑（localStorage 持久化） ============
+  // ============ 收藏夹核心逻辑（D1 数据库 + localStorage 双模式） ============
+  // 已登录用户：收藏存 D1，跨设备同步
+  // 未登录用户：收藏存 localStorage，本地保留
   const FAV_KEY = 'yingxinxian_favorites';
-  function getFavorites() {
+  let FAV_LOGGED_IN = false;
+  let FAV_SET = new Set(); // 当前用户已收藏的 item ID 集合（从 D1 或 localStorage 加载）
+
+  // 从 localStorage 读取（离线兜底）
+  function getLocalFavorites() {
     try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch (_) { return []; }
   }
-  function saveFavorites(list) {
+  function saveLocalFavorites(list) {
     try { localStorage.setItem(FAV_KEY, JSON.stringify(list)); } catch (_) {}
   }
-  function isFavorited(id) {
-    return getFavorites().some(f => f.id === id);
-  }
-  function toggleFavorite(item) {
-    const list = getFavorites();
-    const idx = list.findIndex(f => f.id === item.id);
-    if (idx >= 0) {
-      list.splice(idx, 1);
-    } else {
-      list.unshift({ ...item, savedAt: Date.now() });
-    }
-    saveFavorites(list);
+
+  // 初始化：从 D1 加载收藏列表（未登录则用 localStorage）
+  async function initFavorites() {
+    try {
+      const r = await fetch('/api/favorites', { credentials: 'same-origin' });
+      if (r.ok) {
+        const data = await r.json();
+        if (data.code === 0) {
+          FAV_LOGGED_IN = data.loggedIn || false;
+          FAV_SET = new Set((data.favorites || []).map(f => f.id));
+          // 如果已登录且有本地收藏，迁移到 D1 后清空本地
+          if (FAV_LOGGED_IN) {
+            const local = getLocalFavorites();
+            if (local.length > 0) {
+              for (const item of local) {
+                await fetch('/api/favorites', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'same-origin',
+                  body: JSON.stringify({ item })
+                });
+                FAV_SET.add(item.id);
+              }
+              saveLocalFavorites([]); // 清空本地
+            }
+          }
+          updateFavBadge();
+          // 如果当前在收藏夹视图，重新渲染
+          if (currentView === 'favorites') renderFavorites();
+          return;
+        }
+      }
+    } catch (_) {}
+    // 网络失败：用 localStorage 兜底
+    FAV_SET = new Set(getLocalFavorites().map(f => f.id));
     updateFavBadge();
-    return idx < 0; // true=刚收藏, false=刚取消
   }
+
+  function isFavorited(id) {
+    return FAV_SET.has(id);
+  }
+
+  async function toggleFavorite(item) {
+    const wasFav = FAV_SET.has(item.id);
+    if (wasFav) {
+      FAV_SET.delete(item.id);
+    } else {
+      FAV_SET.add(item.id);
+    }
+    if (FAV_LOGGED_IN) {
+      // 已登录：调用 D1 API
+      try {
+        if (wasFav) {
+          await fetch('/api/favorites?itemId=' + encodeURIComponent(item.id), {
+            method: 'DELETE', credentials: 'same-origin'
+          });
+        } else {
+          await fetch('/api/favorites', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ item })
+          });
+        }
+      } catch (_) {
+        // API 失败：回滚
+        if (wasFav) FAV_SET.add(item.id); else FAV_SET.delete(item.id);
+      }
+    } else {
+      // 未登录：用 localStorage
+      const list = getLocalFavorites();
+      if (wasFav) {
+        const i = list.findIndex(f => f.id === item.id);
+        if (i >= 0) list.splice(i, 1);
+      } else {
+        list.unshift({ ...item, savedAt: Date.now() });
+      }
+      saveLocalFavorites(list);
+    }
+    updateFavBadge();
+    return !wasFav; // true=刚收藏, false=刚取消
+  }
+
+  async function getFavoritesData() {
+    if (FAV_LOGGED_IN) {
+      try {
+        const r = await fetch('/api/favorites', { credentials: 'same-origin' });
+        const data = await r.json();
+        return data.favorites || [];
+      } catch (_) {
+        return getLocalFavorites();
+      }
+    }
+    return getLocalFavorites();
+  }
+
   function updateFavBadge() {
-    const count = getFavorites().length;
+    const count = FAV_SET.size;
     const badge = document.getElementById('favBadge');
     const countEl = document.getElementById('favCount');
     if (badge) {
@@ -219,6 +306,7 @@
     }
     if (countEl) countEl.textContent = count;
   }
+
   // 生成收藏按钮 HTML
   function favBtnHTML(item) {
     const favorited = isFavorited(item.id);
@@ -228,17 +316,18 @@
   function escapeItemJSON(item) {
     return JSON.stringify(item).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
   }
-  // 收藏按钮点击处理
-  window.handleFavClick = function(ev, btn) {
+  // 收藏按钮点击处理（异步）
+  window.handleFavClick = async function(ev, btn) {
     ev.stopPropagation();
     const raw = btn.getAttribute('data-item') || '';
     const json = raw.replace(/&#39;/g, "'").replace(/&quot;/g, '"');
     let item;
     try { item = JSON.parse(json); } catch (_) { return; }
-    const isFav = toggleFavorite(item);
+    btn.disabled = true; // 防止快速重复点击
+    const isFav = await toggleFavorite(item);
     btn.textContent = isFav ? '★ 已收藏' : '☆ 收藏';
     btn.classList.toggle('favorited', isFav);
-    // 如果在收藏夹视图里取消收藏，移除该卡片
+    btn.disabled = false;
     if (!isFav && currentView === 'favorites') {
       const card = btn.closest('.tl-item');
       if (card) {
@@ -250,7 +339,8 @@
     }
   };
 
-  // 页面加载时立即更新收藏数字（localStorage 同步读取，无需等待 API）
+  // 页面加载时立即用 localStorage 兜底显示，再异步从 D1 同步
+  FAV_SET = new Set(getLocalFavorites().map(f => f.id));
   updateFavBadge();
 
   // ======= 统一日期工具：彻底规避 UTC 时区偏差 + NaN 污染 sort =======
@@ -674,8 +764,8 @@
   }
 
   // ============ 我的收藏夹：渲染收藏列表 ============
-  function renderFavorites() {
-    const favs = getFavorites();
+  async function renderFavorites() {
+    const favs = await getFavoritesData();
     const favCountEl = document.getElementById('favCount');
     if (favCountEl) favCountEl.textContent = favs.length;
     const container = document.getElementById('favTimeline');
@@ -935,7 +1025,7 @@
       initBanner();
       renderCatGroups();
       renderSidebar();
-      updateFavBadge();
+      initFavorites(); // 从 D1 加载收藏列表（已登录）或用 localStorage 兜底
     });
 </script>
 </body>

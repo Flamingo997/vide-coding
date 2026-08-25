@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>影新鲜 · 后台管理</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+  .header { background: linear-gradient(135deg, #FF8C00, #FF5722); color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 20px; }
+  .header a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.9; }
+  .header a:hover { opacity: 1; text-decoration: underline; }
+  .container { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .login-box { max-width: 360px; margin: 80px auto; background: #fff; border-radius: 12px; padding: 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+  .login-box h2 { margin-bottom: 20px; text-align: center; }
+  .login-box input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; }
+  .login-box button { width: 100%; padding: 10px; background: #FF7D00; color: #fff; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; }
+  .login-box button:hover { background: #FF5722; }
+  .login-box .hint { font-size: 12px; color: #999; text-align: center; margin-top: 8px; }
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab { padding: 8px 16px; border: 1px solid #ddd; background: #fff; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 14px; }
+  .tab.active { background: #FF7D00; color: #fff; border-color: #FF7D00; }
+  .panel { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .panel h3 { margin-bottom: 12px; font-size: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px; border-bottom: 2px solid #eee; color: #999; font-weight: 600; }
+  td { padding: 8px; border-bottom: 1px solid #f5f5f5; }
+  tr:hover { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; color: #fff; }
+  .badge-admin { background: #FF5722; }
+  .badge-user { background: #2F86FF; }
+  .empty { text-align: center; padding: 40px; color: #999; }
+  .btn-del { color: #d33; cursor: pointer; font-size: 12px; border: none; background: none; }
+  .btn-del:hover { text-decoration: underline; }
+  .stat-row { display: flex; gap: 16px; margin-bottom: 20px; }
+  .stat-card { flex: 1; background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); text-align: center; }
+  .stat-card .num { font-size: 28px; font-weight: 700; color: #FF7D00; }
+  .stat-card .label { font-size: 12px; color: #999; margin-top: 4px; }
+  #msg { position: fixed; top: 20px; right: 20px; padding: 10px 16px; border-radius: 6px; font-size: 14px; z-index: 999; display: none; }
+  #msg.show { display: block; }
+  #msg.ok { background: #4CAF50; color: #fff; }
+  #msg.err { background: #d33; color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>影新鲜 · 后台管理</h1>
+  <div>
+    <a href="/">← 返回首页</a>
+    <span style="margin: 0 8px; opacity: 0.5">|</span>
+    <a href="javascript:logout()" id="logoutLink" style="display:none">登出</a>
+  </div>
+</div>
+
+<div id="msg"></div>
+
+<!-- 登录页 -->
+<div id="loginPage" class="login-box">
+  <h2>管理员登录</h2>
+  <input type="password" id="pwdInput" placeholder="请输入密码" onkeydown="if(event.key==='Enter')doLogin()">
+  <button onclick="doLogin()">登录</button>
+  <p class="hint">默认密码 admin123，登录后请修改</p>
+</div>
+
+<!-- 管理面板 -->
+<div id="adminPanel" class="container" style="display:none">
+  <div class="stat-row" id="statsRow"></div>
+  <div class="tab-bar">
+    <div class="tab active" data-tab="favorites" onclick="switchTab('favorites')">收藏记录</div>
+    <div class="tab" data-tab="news" onclick="switchTab('news')">快讯管理</div>
+    <div class="tab" data-tab="users" onclick="switchTab('users')">用户管理</div>
+  </div>
+  <div class="panel" id="tabContent"></div>
+</div>
+
+<script>
+  let currentTab = 'favorites';
+
+  // ============ 工具 ============
+  function showMsg(text, type) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'show ' + (type || 'ok');
+    setTimeout(() => el.className = '', 2500);
+  }
+
+  async function api(url, method, body) {
+    const opt = { method: method || 'GET', credentials: 'same-origin' };
+    if (body) {
+      opt.headers = { 'Content-Type': 'application/json' };
+      opt.body = JSON.stringify(body);
+    }
+    const r = await fetch(url, opt);
+    return r.json().catch(() => ({ code: 500, message: '解析失败' }));
+  }
+
+  // ============ 登录 ============
+  async function doLogin() {
+    const pwd = document.getElementById('pwdInput').value.trim();
+    if (!pwd) return;
+    const data = await api('/api/auth/login', 'POST', { password: pwd });
+    if (data.code === 0) {
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('adminPanel').style.display = 'block';
+      document.getElementById('logoutLink').style.display = 'inline';
+      showMsg('登录成功', 'ok');
+      loadStats();
+      loadTab(currentTab);
+    } else {
+      showMsg(data.message || '登录失败', 'err');
+    }
+  }
+
+  async function logout() {
+    await api('/api/auth/login', 'POST', { action: 'logout' });
+    location.reload();
+  }
+
+  // ============ 初始化检查登录状态 ============
+  (async function() {
+    const data = await api('/api/auth/check');
+    if (data.loggedIn) {
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('adminPanel').style.display = 'block';
+      document.getElementById('logoutLink').style.display = 'inline';
+      loadStats();
+      loadTab(currentTab);
+    }
+  })();
+
+  // ============ 统计 ============
+  async function loadStats() {
+    const [favRes, userRes] = await Promise.all([
+      api('/api/favorites/count'),
+      api('/api/admin/stats')
+    ]);
+    const favCount = favRes.count || 0;
+    const userCount = userRes.userCount || 0;
+    const sessionCount = userRes.sessionCount || 0;
+    document.getElementById('statsRow').innerHTML = `
+      <div class="stat-card"><div class="num">${favCount}</div><div class="label">收藏记录</div></div>
+      <div class="stat-card"><div class="num">${userCount}</div><div class="label">注册用户</div></div>
+      <div class="stat-card"><div class="num">${sessionCount}</div><div class="label">活跃会话</div></div>
+    `;
+  }
+
+  // ============ Tab 切换 ============
+  function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    loadTab(tab);
+  }
+
+  async function loadTab(tab) {
+    const el = document.getElementById('tabContent');
+    if (tab === 'favorites') {
+      const data = await api('/api/favorites');
+      const favs = data.favorites || [];
+      if (!favs.length) {
+        el.innerHTML = '<div class="empty">还没有收藏记录</div>';
+        return;
+      }
+      el.innerHTML = `<table>
+        <thead><tr><th>影片</th><th>类型</th><th>来源</th><th>收藏时间</th><th>操作</th></tr></thead>
+        <tbody>${favs.map(f => {
+          const t = f.type || 'other';
+          const date = f.savedAt ? new Date(f.savedAt).toLocaleString('zh-CN') : '-';
+          return `<tr>
+            <td>${f.title || '-'}</td>
+            <td>${t}</td>
+            <td>${f.source || '-'}</td>
+            <td>${date}</td>
+            <td><button class="btn-del" onclick="delFav('${f.id}')">删除</button></td>
+          </tr>`;
+        }).join('')}</tbody></table>`;
+    } else if (tab === 'news') {
+      const data = await api('/api/admin/news-flash');
+      const list = data.data || [];
+      el.innerHTML = `<h3>快讯兜底数据（${list.length} 条）</h3>
+        <table><thead><tr><th>标题</th><th>时间标签</th><th>排序</th><th>操作</th></tr></thead>
+        <tbody>${list.map(n => `<tr>
+          <td>${n.title}</td><td>${n.time_label || '-'}</td><td>${n.sort_order}</td>
+          <td><button class="btn-del" onclick="delNews(${n.id})">删除</button></td>
+        </tr>`).join('')}</tbody></table>`;
+    } else if (tab === 'users') {
+      const data = await api('/api/admin/users');
+      const users = data.data || [];
+      el.innerHTML = `<table>
+        <thead><tr><th>用户名</th><th>角色</th><th>注册时间</th><th>操作</th></tr></thead>
+        <tbody>${users.map(u => `<tr>
+          <td>${u.id}</td>
+          <td><span class="badge ${u.role === 'admin' ? 'badge-admin' : 'badge-user'}">${u.role}</span></td>
+          <td>${u.created_at ? new Date(u.created_at).toLocaleString('zh-CN') : '-'}</td>
+          <td>${u.role !== 'admin' ? `<button class="btn-del" onclick="delUser('${u.id}')">删除</button>` : '-'}</td>
+        </tr>`).join('')}</tbody></table>`;
+    }
+  }
+
+  async function delFav(itemId) {
+    if (!confirm('确认删除此收藏？')) return;
+    await api('/api/favorites?itemId=' + encodeURIComponent(itemId), 'DELETE');
+    showMsg('已删除', 'ok');
+    loadStats();
+    loadTab('favorites');
+  }
+
+  async function delNews(id) {
+    if (!confirm('确认删除此快讯？')) return;
+    await api('/api/admin/news-flash', 'DELETE', { id });
+    showMsg('已删除', 'ok');
+    loadTab('news');
+  }
+
+  async function delUser(uid) {
+    if (!confirm('确认删除用户 ' + uid + '？其收藏也将被删除。')) return;
+    await api('/api/admin/users', 'DELETE', { id: uid });
+    showMsg('已删除', 'ok');
+    loadStats();
+    loadTab('users');
+  }
+</script>
+</body>
+</html>
