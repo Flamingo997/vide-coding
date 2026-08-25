@@ -229,32 +229,33 @@
         const data = await r.json();
         if (data.code === 0) {
           FAV_LOGGED_IN = data.loggedIn || false;
-          FAV_SET = new Set((data.favorites || []).map(f => f.id));
-          // 如果已登录且有本地收藏，迁移到 D1 后清空本地
           if (FAV_LOGGED_IN) {
+            FAV_SET = new Set((data.favorites || []).filter(f => f && f.id).map(f => f.id));
             const local = getLocalFavorites();
             if (local.length > 0) {
               for (const item of local) {
-                await fetch('/api/favorites', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'same-origin',
-                  body: JSON.stringify({ item })
-                });
-                FAV_SET.add(item.id);
+                try {
+                  await fetch('/api/favorites', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ item })
+                  });
+                  if (item.id) FAV_SET.add(item.id);
+                } catch (_) {}
               }
-              saveLocalFavorites([]); // 清空本地
+              saveLocalFavorites([]);
             }
+          } else {
+            FAV_SET = new Set(getLocalFavorites().filter(f => f && f.id).map(f => f.id));
           }
           updateFavBadge();
-          // 如果当前在收藏夹视图，重新渲染
           if (currentView === 'favorites') renderFavorites();
           return;
         }
       }
     } catch (_) {}
-    // 网络失败：用 localStorage 兜底
-    FAV_SET = new Set(getLocalFavorites().map(f => f.id));
+    FAV_SET = new Set(getLocalFavorites().filter(f => f && f.id).map(f => f.id));
     updateFavBadge();
   }
 
@@ -412,10 +413,12 @@
       const data = await r.json();
       if (data.code === 0) {
         msgEl.textContent = '登录成功！';
-        setTimeout(() => {
+        FAV_LOGGED_IN = true;
+        setTimeout(async () => {
           closeLoginModal();
           setNavLoggedIn(data.userId || '已登录');
-          initFavorites();
+          await initFavorites();
+          updateFavBadge();
         }, 600);
       } else {
         msgEl.textContent = data.message || '登录失败';
@@ -441,10 +444,12 @@
       const data = await r.json();
       if (data.code === 0) {
         msgEl.textContent = '注册成功，已自动登录！';
-        setTimeout(() => {
+        FAV_LOGGED_IN = true;
+        setTimeout(async () => {
           closeLoginModal();
           setNavLoggedIn(data.userId || '已登录');
-          initFavorites();
+          await initFavorites();
+          updateFavBadge();
         }, 800);
       } else {
         msgEl.textContent = data.message || '注册失败';
@@ -471,6 +476,7 @@
     try {
       const r = await fetch('/api/auth', { credentials: 'same-origin' });
       const data = await r.json();
+      FAV_LOGGED_IN = data.loggedIn || false;
       if (data.loggedIn) {
         setNavLoggedIn(data.userId || '已登录');
       }

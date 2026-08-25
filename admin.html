@@ -100,7 +100,7 @@
   async function doLogin() {
     const pwd = document.getElementById('pwdInput').value.trim();
     if (!pwd) return;
-    const data = await api('/api/auth/login', 'POST', { password: pwd });
+    const data = await api('/api/auth', 'POST', { username: 'admin', password: pwd });
     if (data.code === 0) {
       document.getElementById('loginPage').style.display = 'none';
       document.getElementById('adminPanel').style.display = 'block';
@@ -114,13 +114,13 @@
   }
 
   async function logout() {
-    await api('/api/auth/login', 'POST', { action: 'logout' });
+    await api('/api/auth', 'POST', { action: 'logout' });
     location.reload();
   }
 
   // ============ 初始化检查登录状态 ============
   (async function() {
-    const data = await api('/api/auth/check');
+    const data = await api('/api/auth');
     if (data.loggedIn) {
       document.getElementById('loginPage').style.display = 'none';
       document.getElementById('adminPanel').style.display = 'block';
