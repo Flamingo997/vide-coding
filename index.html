@@ -54,7 +54,7 @@
     <a class="nav-item" data-view="timeline" data-type="anime"><span class="nav-dot" style="background:#FFB800"></span>动漫</a>
     <a class="nav-item optional" data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
     <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
-    <a class="nav-item fav-nav" data-view="favorites" id="favNav">♡ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
+    <a class="nav-item fav-nav" data-view="favorites" id="favNav">★ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
         <a data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
@@ -222,7 +222,7 @@
   // 生成收藏按钮 HTML
   function favBtnHTML(item) {
     const favorited = isFavorited(item.id);
-    return `<button class="fav-btn${favorited ? ' favorited' : ''}" onclick="handleFavClick(event, this)" data-item='${escapeItemJSON(item)}'>${favorited ? '♥ 已收藏' : '♡ 收藏'}</button>`;
+    return `<button class="fav-btn${favorited ? ' favorited' : ''}" onclick="handleFavClick(event, this)" data-item='${escapeItemJSON(item)}'>${favorited ? '★ 已收藏' : '☆ 收藏'}</button>`;
   }
   // 转义 item 为安全的 JSON 属性值
   function escapeItemJSON(item) {
@@ -236,7 +236,7 @@
     let item;
     try { item = JSON.parse(json); } catch (_) { return; }
     const isFav = toggleFavorite(item);
-    btn.textContent = isFav ? '♥ 已收藏' : '♡ 收藏';
+    btn.textContent = isFav ? '★ 已收藏' : '☆ 收藏';
     btn.classList.toggle('favorited', isFav);
     // 如果在收藏夹视图里取消收藏，移除该卡片
     if (!isFav && currentView === 'favorites') {
