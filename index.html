@@ -356,7 +356,9 @@
     document.getElementById('tlView').hidden = view !== 'timeline';
 
     // 视图切换过渡动画（淡入 + 上移）
-    const showEl = view === 'home' ? document.getElementById('homeView') : document.getElementById('tlView');
+    const showEl = view === 'home' ? document.getElementById('homeView')
+      : view === 'favorites' ? document.getElementById('favView')
+      : document.getElementById('tlView');
     showEl.classList.remove('view-enter');
     void showEl.offsetWidth; // 强制重排以重启动画
     showEl.classList.add('view-enter');
@@ -667,6 +669,54 @@
     }
     return s;
   }
+
+  // ============ 我的收藏夹：渲染收藏列表 ============
+  function renderFavorites() {
+    const favs = getFavorites();
+    const favCountEl = document.getElementById('favCount');
+    if (favCountEl) favCountEl.textContent = favs.length;
+    const container = document.getElementById('favTimeline');
+    if (!favs.length) {
+      container.innerHTML = '<div class="empty-tip">还没有收藏任何影片，去首页看看吧 ☆</div>';
+      return;
+    }
+    const sorted = [...favs].sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+    container.innerHTML = sorted.map(n => {
+      const t = TYPE_MAP[n.type] || { name: '其他', color: '#999' };
+      const time = n.savedAt ? new Date(n.savedAt).toLocaleDateString('zh-CN') : '';
+      const elId = titleToId(n.title);
+      const safeTitle = n.title.replace(/"/g, '&quot;');
+      return `
+        <div class="tl-item" style="--tc:${t.color}" id="${elId}" data-title="${safeTitle}">
+          <div class="tl-node"></div>
+          <article class="card" onclick="toggleCard(this)">
+            <div class="poster"><img src="${n.poster || POSTER_MAP[n.title] || 'posters/default.jpg'}" alt="${n.title}" loading="lazy" onerror="this.src='posters/default.jpg'"></div>
+            <div class="card-main">
+              <div class="card-top">
+                <span class="card-time">${time} · 收藏</span>
+                <span class="tag-solid">${t.name}</span>
+              </div>
+              <h3 class="card-title">${cleanBannerTitle(n.title)}<span class="detail-hint">点击卡片展开详情</span></h3>
+              <p class="card-summary">${truncateText(n.summary, 200)}</p>
+              <div class="card-foot">
+                <span class="source">来源：${n.source || '未知'}</span>
+                <div class="card-foot-btns">
+                  ${favBtnHTML(n)}
+                  ${n.sourceLink ? `<a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 -></a>` : ''}
+                </div>
+              </div>
+              <div class="detail">
+                <p>${truncateText(n.detail?.intro || n.summary, 200)}</p>
+                <div class="meta-line"><strong>主创：</strong>${n.detail?.cast || '暂无'}</div>
+                <div class="meta-line"><strong>播出：</strong>${n.detail?.platform || '暂无'}</div>
+                <div class="meta-line"><strong>规格：</strong>${n.detail?.ep || '暂无'}</div>
+              </div>
+            </div>
+          </article>
+        </div>`;
+    }).join('');
+  }
+
   function renderCatGroups() {
     const order = ['movie', 'drama', 'show', 'anime', 'duan', 'doc'];
     document.getElementById('catGroups').innerHTML = order.map(type => {
