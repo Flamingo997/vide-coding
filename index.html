@@ -581,7 +581,8 @@
 
   function goView(view, type, title) {
     currentView = view;
-    currentType = type || 'all';
+    // home 和 favorites 视图不需要 currentType，保持空字符串以匹配导航 active 条件
+    currentType = (view === 'home' || view === 'favorites') ? '' : (type || 'all');
     // 只有明确传了 title 才消费性定位，其他入口不设置
     pendingScrollTitle = title || null;
     document.getElementById('homeView').hidden = view !== 'home';
