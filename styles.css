@@ -888,7 +888,7 @@ body {
 .fav-badge {
   display: inline-block; min-width: 18px; height: 18px; line-height: 18px;
   text-align: center; font-size: 14px; color: #999;
-  padding: 0 4px; margin-left: 2px; vertical-align: middle; margin-top: 4px;
+  padding: 0 4px; margin-left: 2px; vertical-align: middle; margin-top: 1px;
 }
 .fav-count { font-size: 14px; color: #999; font-weight: 400; margin-left: 4px; }
 .fav-filter-row { margin-bottom: 16px; display: flex; gap: 8px; }
