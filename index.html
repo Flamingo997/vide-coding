@@ -250,6 +250,9 @@
     }
   };
 
+  // 页面加载时立即更新收藏数字（localStorage 同步读取，无需等待 API）
+  updateFavBadge();
+
   // ======= 统一日期工具：彻底规避 UTC 时区偏差 + NaN 污染 sort =======
   // 1) parseYMDLocal(str): 手动拆分 Y/M/D，用本地时区 new Date(y, m-1, d) 构造
   //    解析失败返回 null，绝不返回 Invalid Date
