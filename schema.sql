@@ -42,9 +42,9 @@ CREATE TABLE IF NOT EXISTS news_flash (
 -- ============ 默认数据 ============
 
 -- 默认管理员（密码：admin123，上线后请修改）
--- SHA-256('admin123') = 240be518fabd2724ddb98f8cf52e652ff954b6023ec2778a87c2a63c689e9c0f
+-- SHA-256('admin123') = 240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9
 INSERT OR IGNORE INTO users (id, password_hash, role, created_at) VALUES
-  ('admin', '240be518fabd2724ddb98f8cf52e652ff954b6023ec2778a87c2a63c689e9c0f', 'admin', 1787630000000);
+  ('admin', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9', 'admin', 1787630000000);
 
 -- 快讯兜底数据（环球影讯 2026-08-21 截图）
 INSERT OR IGNORE INTO news_flash (title, time_label, ts, url, sort_order) VALUES
