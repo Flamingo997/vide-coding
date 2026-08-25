@@ -1,7 +1,8 @@
-// Cloudflare Pages Function：用户认证（简单密码登录）
-// POST /api/auth/login   { password } -> 登录，设置 cookie
-// POST /api/auth/logout  -> 登出，清除 cookie
-// GET  /api/auth          -> 检查登录状态
+// Cloudflare Pages Function：用户认证（注册 + 登录）
+// POST /api/auth  { action: 'register', username, password } -> 注册
+// POST /api/auth  { username, password } -> 登录
+// POST /api/auth  { action: 'logout' } -> 登出
+// GET  /api/auth  -> 检查登录状态
 
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 天
 
@@ -67,7 +68,7 @@ export async function onRequestPost(context) {
 
   const body = await context.request.json().catch(() => ({}));
 
-  // 登出
+  // ---------- 登出 ----------
   if (body.action === 'logout') {
     const token = getCookie(context.request.headers.get('Cookie'), 'session');
     if (token) {
@@ -81,17 +82,65 @@ export async function onRequestPost(context) {
     });
   }
 
-  // 登录
+  // ---------- 注册 ----------
+  if (body.action === 'register') {
+    const username = (body.username || '').trim();
+    const password = body.password || '';
+
+    if (!username || username.length < 2 || username.length > 20) {
+      return json({ code: 400, message: '用户名需 2-20 个字符' }, 400);
+    }
+    if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]+$/.test(username)) {
+      return json({ code: 400, message: '用户名只能含字母、数字、下划线、中文' }, 400);
+    }
+    if (!password || password.length < 6 || password.length > 32) {
+      return json({ code: 400, message: '密码需 6-32 个字符' }, 400);
+    }
+
+    // 检查用户名是否已存在
+    const existing = await db.prepare('SELECT id FROM users WHERE id = ?').bind(username).first();
+    if (existing) {
+      return json({ code: 409, message: '用户名已被占用' }, 409);
+    }
+
+    // 创建用户
+    const hash = await sha256(password);
+    const now = Date.now();
+    await db.prepare('INSERT INTO users (id, password_hash, role, created_at) VALUES (?, ?, ?, ?)')
+      .bind(username, hash, 'user', now).run();
+
+    // 自动登录
+    const token = randomToken();
+    await db.prepare('INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
+      .bind(token, username, now + SESSION_DURATION, now).run();
+
+    return new Response(JSON.stringify({
+      code: 0,
+      message: '注册成功',
+      userId: username,
+      role: 'user'
+    }), {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Set-Cookie': setCookie('session', token, SESSION_DURATION / 1000)
+      }
+    });
+  }
+
+  // ---------- 登录 ----------
+  const username = (body.username || '').trim();
   const password = body.password || '';
-  if (!password) {
-    return json({ code: 400, message: '请输入密码' }, 400);
+
+  if (!username || !password) {
+    return json({ code: 400, message: '请输入用户名和密码' }, 400);
   }
 
   const hash = await sha256(password);
+  const user = await db.prepare('SELECT id, role FROM users WHERE id = ? AND password_hash = ?')
+    .bind(username, hash).first();
 
-  const user = await db.prepare('SELECT id, role FROM users WHERE password_hash = ?').bind(hash).first();
   if (!user) {
-    return json({ code: 401, message: '密码错误' }, 401);
+    return json({ code: 401, message: '用户名或密码错误' }, 401);
   }
 
   const token = randomToken();
