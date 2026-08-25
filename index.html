@@ -56,6 +56,7 @@
     <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
     <a class="nav-item fav-nav" data-view="favorites" id="favNav">★ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
     <a class="nav-item login-nav" id="loginNav" onclick="openLoginModal()">🔑 <span class="login-label">登录</span></a>
+    <a class="nav-item logout-nav" id="logoutNav" onclick="doSiteLogout()" hidden>🚪 <span class="logout-label">退出</span></a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
         <a data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
@@ -182,15 +183,14 @@
 <!-- 登录/注册弹窗 -->
 <div id="loginModal" class="login-modal" hidden>
   <div class="login-modal-box">
-    <div class="login-tabs">
-      <span class="login-tab active" id="tabLogin" onclick="switchAuthTab('login')">登录</span>
-      <span class="login-tab" id="tabRegister" onclick="switchAuthTab('register')">注册</span>
-    </div>
-    <input type="text" id="loginUserInput" placeholder="用户名（2-20字符）" onkeydown="if(event.key==='Enter')document.getElementById('loginPwdInput').focus()" style="display:none">
-    <input type="password" id="loginPwdInput" placeholder="密码（6-32字符）" onkeydown="if(event.key==='Enter')doSiteAuth()">
+    <h3>账号登录 / 注册</h3>
+    <p class="login-hint">登录后收藏夹可跨设备同步</p>
+    <input type="text" id="loginUserInput" placeholder="用户名（2-20字符）" onkeydown="if(event.key==='Enter')document.getElementById('loginPwdInput').focus()">
+    <input type="password" id="loginPwdInput" placeholder="密码（6-32字符）" onkeydown="if(event.key==='Enter')doSiteLogin()">
     <div class="login-modal-btns">
       <button onclick="closeLoginModal()" class="login-btn-cancel">取消</button>
-      <button onclick="doSiteAuth()" class="login-btn-ok" id="authSubmitBtn">登录</button>
+      <button onclick="doSiteLogin()" class="login-btn-ok">登录</button>
+      <button onclick="doSiteRegister()" class="login-btn-reg">注册</button>
     </div>
     <p id="loginMsg" class="login-msg"></p>
   </div>
@@ -362,12 +362,26 @@
   updateFavBadge();
 
   // ============ 登录/注册/登出逻辑 ============
-  let authMode = 'login'; // 'login' | 'register'
+  function setNavLoggedIn(userId) {
+    const loginNav = document.getElementById('loginNav');
+    const logoutNav = document.getElementById('logoutNav');
+    loginNav.innerHTML = '👤 <span class="login-label">' + userId + '</span>';
+    loginNav.onclick = null;
+    loginNav.style.cursor = 'default';
+    logoutNav.hidden = false;
+  }
+  function setNavLoggedOut() {
+    const loginNav = document.getElementById('loginNav');
+    const logoutNav = document.getElementById('logoutNav');
+    loginNav.innerHTML = '🔑 <span class="login-label">登录</span>';
+    loginNav.onclick = openLoginModal;
+    loginNav.style.cursor = 'pointer';
+    logoutNav.hidden = true;
+  }
 
   window.openLoginModal = function() {
     document.getElementById('loginModal').hidden = false;
-    switchAuthTab('login');
-    document.getElementById('loginPwdInput').focus();
+    document.getElementById('loginUserInput').focus();
   };
   window.closeLoginModal = function() {
     document.getElementById('loginModal').hidden = true;
@@ -375,48 +389,59 @@
     document.getElementById('loginPwdInput').value = '';
     document.getElementById('loginMsg').textContent = '';
   };
-  window.switchAuthTab = function(mode) {
-    authMode = mode;
-    const isRegister = mode === 'register';
-    document.getElementById('tabLogin').classList.toggle('active', !isRegister);
-    document.getElementById('tabRegister').classList.toggle('active', isRegister);
-    document.getElementById('loginUserInput').style.display = isRegister ? 'block' : 'none';
-    document.getElementById('authSubmitBtn').textContent = isRegister ? '注册' : '登录';
-    document.getElementById('loginMsg').textContent = '';
-    if (isRegister) document.getElementById('loginUserInput').focus();
-  };
-  window.doSiteAuth = async function() {
+  window.doSiteLogin = async function() {
     const username = document.getElementById('loginUserInput').value.trim();
     const pwd = document.getElementById('loginPwdInput').value;
     const msgEl = document.getElementById('loginMsg');
-    const isRegister = authMode === 'register';
-
-    if (isRegister && !username) { msgEl.textContent = '请输入用户名'; return; }
+    if (!username) { msgEl.textContent = '请输入用户名'; return; }
     if (!pwd) { msgEl.textContent = '请输入密码'; return; }
-
-    msgEl.textContent = isRegister ? '注册中...' : '登录中...';
+    msgEl.textContent = '登录中...';
     try {
-      const payload = isRegister
-        ? { action: 'register', username, password: pwd }
-        : { username: username || 'admin', password: pwd };
       const r = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ username, password: pwd })
       });
       const data = await r.json();
       if (data.code === 0) {
-        msgEl.textContent = isRegister ? '注册成功！' : '登录成功！';
+        msgEl.textContent = '登录成功！';
         setTimeout(() => {
           closeLoginModal();
-          const nav = document.getElementById('loginNav');
-          nav.innerHTML = '👤 <span class="login-label">' + (data.userId || '已登录') + '</span>';
-          nav.onclick = doSiteLogout;
+          setNavLoggedIn(data.userId || '已登录');
+          initFavorites();
+        }, 600);
+      } else {
+        msgEl.textContent = data.message || '登录失败';
+      }
+    } catch (e) {
+      msgEl.textContent = '网络错误：' + (e.message || e);
+    }
+  };
+  window.doSiteRegister = async function() {
+    const username = document.getElementById('loginUserInput').value.trim();
+    const pwd = document.getElementById('loginPwdInput').value;
+    const msgEl = document.getElementById('loginMsg');
+    if (!username) { msgEl.textContent = '请输入用户名'; return; }
+    if (!pwd) { msgEl.textContent = '请输入密码'; return; }
+    msgEl.textContent = '注册中...';
+    try {
+      const r = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: 'register', username, password: pwd })
+      });
+      const data = await r.json();
+      if (data.code === 0) {
+        msgEl.textContent = '注册成功，已自动登录！';
+        setTimeout(() => {
+          closeLoginModal();
+          setNavLoggedIn(data.userId || '已登录');
           initFavorites();
         }, 800);
       } else {
-        msgEl.textContent = data.message || (isRegister ? '注册失败' : '登录失败');
+        msgEl.textContent = data.message || '注册失败';
       }
     } catch (e) {
       msgEl.textContent = '网络错误：' + (e.message || e);
@@ -429,9 +454,7 @@
       credentials: 'same-origin',
       body: JSON.stringify({ action: 'logout' })
     });
-    const nav = document.getElementById('loginNav');
-    nav.innerHTML = '🔑 <span class="login-label">登录</span>';
-    nav.onclick = openLoginModal;
+    setNavLoggedOut();
     FAV_LOGGED_IN = false;
     FAV_SET = new Set(getLocalFavorites().map(f => f.id));
     updateFavBadge();
@@ -442,9 +465,7 @@
       const r = await fetch('/api/auth', { credentials: 'same-origin' });
       const data = await r.json();
       if (data.loggedIn) {
-        const nav = document.getElementById('loginNav');
-        nav.innerHTML = '👤 <span class="login-label">' + (data.userId || '已登录') + '</span>';
-        nav.onclick = doSiteLogout;
+        setNavLoggedIn(data.userId || '已登录');
       }
     } catch (_) {}
   })();

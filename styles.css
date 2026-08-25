@@ -928,16 +928,8 @@ body {
 .login-btn-cancel { background: #f5f5f5; color: #666; }
 .login-btn-ok { background: #FF7D00; color: #fff; }
 .login-btn-ok:hover { background: #FF5722; }
+.login-btn-reg { background: #fff; color: #FF7D00; border: 1px solid #FF7D00; }
+.login-btn-reg:hover { background: #FFF0E5; }
 .login-msg { font-size: 13px; color: #d33; margin: 8px 0 0; min-height: 18px; }
 .login-nav { cursor: pointer; }
-
-/* 登录弹窗 Tab */
-.login-tabs {
-  display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid #eee;
-}
-.login-tab {
-  flex: 1; text-align: center; padding: 8px 0; font-size: 15px;
-  cursor: pointer; color: #999; border-bottom: 2px solid transparent;
-  transition: all 0.2s;
-}
-.login-tab.active { color: #FF7D00; border-bottom-color: #FF7D00; font-weight: 600; }
+.logout-nav { cursor: pointer; }
