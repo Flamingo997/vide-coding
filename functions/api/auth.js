@@ -1,9 +1,16 @@
 // Cloudflare Pages Function：用户认证（简单密码登录）
 // POST /api/auth/login   { password } -> 登录，设置 cookie
 // POST /api/auth/logout  -> 登出，清除 cookie
-// GET  /api/auth/check   -> 检查登录状态
+// GET  /api/auth          -> 检查登录状态
 
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 天
+
+function json(obj, status = 200) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' }
+  });
+}
 
 async function sha256(text) {
   const data = new TextEncoder().encode(text);
@@ -31,7 +38,6 @@ function getCookie(cookieHeader, name) {
   return m ? m[1] : null;
 }
 
-// 验证 session 是否有效，返回 user_id 或 null
 async function verifySession(db, request) {
   const token = getCookie(request.headers.get('Cookie'), 'session');
   if (!token) return null;
@@ -83,13 +89,11 @@ export async function onRequestPost(context) {
 
   const hash = await sha256(password);
 
-  // 查找匹配的用户
   const user = await db.prepare('SELECT id, role FROM users WHERE password_hash = ?').bind(hash).first();
   if (!user) {
     return json({ code: 401, message: '密码错误' }, 401);
   }
 
-  // 创建 session
   const token = randomToken();
   const now = Date.now();
   await db.prepare('INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
@@ -107,12 +111,3 @@ export async function onRequestPost(context) {
     }
   });
 }
-
-function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8' }
-  });
-}
-
-export { verifySession };
