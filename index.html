@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=old13">
+<link rel="stylesheet" href="styles.css?v=new14">
 </head>
 <body>
 
@@ -213,9 +213,34 @@
   let FAV_LOGGED_IN = false;
   let FAV_SET = new Set(); // 当前用户已收藏的 item ID 集合（从 D1 或 localStorage 加载）
 
-  // 从 localStorage 读取（离线兜底）
+  // 为收藏/卡片项生成稳定 id（兼容 data.json 中无 id 的老数据）
+  function ensureItemId(item) {
+    if (!item) return item;
+    if (item.id) return item;
+    // 用 type + title 生成确定性 id，保证同一影片无论在哪 id 都一致
+    const seed = (item.type || 'unknown') + '|' + (item.title || 'untitled');
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
+    item.id = 'auto_' + (h >>> 0).toString(36);
+    return item;
+  }
+
+  // 从 localStorage 读取（离线兜底）—— 自动补 id 并去重
   function getLocalFavorites() {
-    try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch (_) { return []; }
+    try {
+      const raw = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+      if (!Array.isArray(raw)) return [];
+      const seen = new Set();
+      const deduped = [];
+      for (const f of raw) {
+        if (!f) continue;
+        ensureItemId(f);
+        if (seen.has(f.id)) continue;
+        seen.add(f.id);
+        deduped.push(f);
+      }
+      return deduped;
+    } catch (_) { return []; }
   }
   function saveLocalFavorites(list) {
     try { localStorage.setItem(FAV_KEY, JSON.stringify(list)); } catch (_) {}
@@ -235,19 +260,21 @@
             if (local.length > 0) {
               for (const item of local) {
                 try {
+                  ensureItemId(item);
                   await fetch('/api/favorites', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
                     body: JSON.stringify({ item })
                   });
-                  if (item.id) FAV_SET.add(item.id);
+                  FAV_SET.add(item.id);
                 } catch (_) {}
               }
               saveLocalFavorites([]);
             }
           } else {
-            FAV_SET = new Set(getLocalFavorites().filter(f => f && f.id).map(f => f.id));
+            const local = getLocalFavorites();
+            FAV_SET = new Set(local.map(f => f.id));
           }
           updateFavBadge();
           if (currentView === 'favorites') renderFavorites();
@@ -255,7 +282,8 @@
         }
       }
     } catch (_) {}
-    FAV_SET = new Set(getLocalFavorites().filter(f => f && f.id).map(f => f.id));
+    const local = getLocalFavorites();
+    FAV_SET = new Set(local.map(f => f.id));
     updateFavBadge();
   }
 
@@ -264,6 +292,7 @@
   }
 
   async function toggleFavorite(item) {
+    ensureItemId(item);
     const wasFav = FAV_SET.has(item.id);
     if (wasFav) {
       FAV_SET.delete(item.id);
@@ -309,7 +338,7 @@
       try {
         const r = await fetch('/api/favorites', { credentials: 'same-origin' });
         const data = await r.json();
-        return data.favorites || [];
+        return (data.favorites || []).filter(f => f && f.id);
       } catch (_) {
         return getLocalFavorites();
       }
@@ -330,11 +359,13 @@
 
   // 生成收藏按钮 HTML
   function favBtnHTML(item) {
+    ensureItemId(item);
     const favorited = isFavorited(item.id);
     return `<button class="fav-btn${favorited ? ' favorited' : ''}" onclick="handleFavClick(event, this)" data-item='${escapeItemJSON(item)}'>${favorited ? '★ 已收藏' : '☆ 收藏'}</button>`;
   }
   // 转义 item 为安全的 JSON 属性值
   function escapeItemJSON(item) {
+    ensureItemId(item);
     return JSON.stringify(item).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
   }
   // 收藏按钮点击处理（异步）
@@ -344,6 +375,7 @@
     const json = raw.replace(/&#39;/g, "'").replace(/&quot;/g, '"');
     let item;
     try { item = JSON.parse(json); } catch (_) { return; }
+    ensureItemId(item);
     btn.disabled = true; // 防止快速重复点击
     const isFav = await toggleFavorite(item);
     btn.textContent = isFav ? '★ 已收藏' : '☆ 收藏';
