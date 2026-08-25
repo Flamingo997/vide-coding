@@ -934,18 +934,15 @@ body {
 .login-nav { cursor: pointer; }
 .logout-nav { cursor: pointer; }
 
-/* 侧边栏登录/退出按钮 */
-.auth-side-card {
-  display: flex; flex-direction: column; gap: 8px; padding: 12px 16px;
+/* 头部登录/退出按钮 */
+.header-right { display: flex; align-items: center; gap: 8px; }
+.header-auth-btn {
+  padding: 6px 14px; border: none; border-radius: 14px;
+  font-size: 13px; cursor: pointer; background: #FF7D00; color: #fff;
+  white-space: nowrap; transition: background 0.2s;
 }
-.side-auth-btn {
-  width: 100%; padding: 10px; border: none; border-radius: 6px;
-  font-size: 14px; cursor: pointer; background: #FF7D00; color: #fff;
-  transition: background 0.2s;
-}
-.side-auth-btn:hover { background: #FF5722; }
-.side-auth-logout {
+.header-auth-btn:hover { background: #FF5722; }
+.header-auth-logout {
   background: #fff; color: #d33; border: 1px solid #ddd;
 }
-.side-auth-logout:hover { background: #FFF5F5; border-color: #d33; }
-.side-auth-user { font-size: 13px; color: #999; text-align: center; }
+.header-auth-logout:hover { background: #FFF5F5; border-color: #d33; }

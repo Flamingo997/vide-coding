@@ -62,8 +62,12 @@
       </span>
     </span>
   </nav>
-  <div class="search-box">
-    <input type="text" id="searchInput" placeholder="搜索作品 / 关键词">
+  <div class="header-right">
+    <button class="header-auth-btn" id="loginBtn" onclick="openLoginModal()">登录</button>
+    <button class="header-auth-btn header-auth-logout" id="logoutBtn" onclick="doSiteLogout()" hidden>退出登录</button>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="搜索作品 / 关键词">
+    </div>
   </div>
 </header>
 
@@ -103,12 +107,6 @@
         </h3>
         <div id="boxOffice"></div>
         <a class="side-link" id="boxOfficeMore">查看更多电影资讯 -></a>
-      </div>
-
-      <div class="side-card auth-side-card">
-        <button class="side-auth-btn" id="loginBtn" onclick="openLoginModal()">登录</button>
-        <button class="side-auth-btn side-auth-logout" id="logoutBtn" onclick="doSiteLogout()" hidden>退出登录</button>
-        <span class="side-auth-user" id="authUserLabel"></span>
       </div>
 
       <div class="side-card market-card" id="marketCard" title="点击查看猫眼专业版票房大盘">
@@ -369,26 +367,22 @@
   function setNavLoggedIn(userId) {
     const loginBtn = document.getElementById('loginBtn');
     const logoutBtn = document.getElementById('logoutBtn');
-    const userLabel = document.getElementById('authUserLabel');
-    loginBtn.textContent = '已登录：' + userId;
+    loginBtn.textContent = userId;
     loginBtn.onclick = null;
     loginBtn.style.cursor = 'default';
     loginBtn.style.background = '#f5f5f5';
     loginBtn.style.color = '#666';
     logoutBtn.hidden = false;
-    userLabel.textContent = '';
   }
   function setNavLoggedOut() {
     const loginBtn = document.getElementById('loginBtn');
     const logoutBtn = document.getElementById('logoutBtn');
-    const userLabel = document.getElementById('authUserLabel');
     loginBtn.textContent = '登录';
     loginBtn.onclick = openLoginModal;
     loginBtn.style.cursor = 'pointer';
     loginBtn.style.background = '';
     loginBtn.style.color = '';
     logoutBtn.hidden = true;
-    userLabel.textContent = '';
   }
 
   window.openLoginModal = function() {
