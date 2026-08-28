@@ -838,7 +838,7 @@ body {
 .src-btn:hover { color: var(--primary); border-color: var(--primary); background: rgba(47, 134, 255, 0.05); }
 
 .detail { max-height: 0; overflow: hidden; transition: max-height 0.35s ease; }
-.detail.open { max-height: 500px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #F0F3F8; }
+.detail.open { max-height: 1500px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #F0F3F8; }
 .detail p { font-size: 14px; color: var(--gray-2); margin-bottom: 10px; line-height: 1.7; }
 .meta-line { font-size: 13px; color: var(--gray-2); margin-bottom: 6px; }
 .meta-line strong { color: var(--gray-1); margin-right: 4px; }

@@ -1060,7 +1060,7 @@
                 </div>
               </div>
               <div class="detail">
-                <p>${truncateText(n.detail?.intro || n.summary, 200)}</p>
+                <p>${n.detail?.intro || n.summary || '暂无简介'}</p>
                 <div class="meta-line"><strong>主创：</strong>${n.detail?.cast || '暂无'}</div>
                 <div class="meta-line"><strong>播出：</strong>${n.detail?.platform || '暂无'}</div>
                 <div class="meta-line"><strong>规格：</strong>${n.detail?.ep || '暂无'}</div>
