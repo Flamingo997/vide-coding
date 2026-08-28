@@ -4,13 +4,7 @@
 // POST /api/translate  body: { "text": "English text" }  ->  { "code": 0, "text": "中文翻译" }
 
 import OpenAI from 'openai';
-
-const SYSTEM_PROMPT = `你是一个专业的影视翻译引擎。请将用户输入的英文文本翻译成简体中文。
-规则：
-1. 影视作品名使用通行中文译名
-2. 专业名词、人名、片名在翻译后需用括号备注英文原文，例如"奥本海默(Oppenheimer)"、"死侍与金刚狼(Deadpool & Wolverine)"
-3. 多段文本以"---"分隔，请保持相同的分隔格式返回
-4. 只返回翻译结果，不加任何解释、引号或前缀`;
+import { SYSTEM_PROMPT } from '../_lib/prompts.js';
 
 function jsonResponse(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
