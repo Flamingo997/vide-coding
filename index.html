@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=new14">
+<link rel="stylesheet" href="styles.css?v=new15">
 </head>
 <body>
 
@@ -947,7 +947,7 @@
                     </div>
                   </div>
                   <div class="detail">
-                    <p>${truncateText(n.detail.intro, 200)}</p>
+                    <p>${n.detail.intro || '暂无简介'}</p>
                     <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
                     <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
                     <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
