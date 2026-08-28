@@ -396,6 +396,92 @@
   FAV_SET = new Set(getLocalFavorites().map(f => f.id));
   updateFavBadge();
 
+  // ============ 翻译功能：英文标题/简介 -> 中文（DeepSeek API 代理） ============
+  // 检测文本是否包含英文（至少2个连续拉丁字母）
+  function hasEnglish(text) {
+    return /[a-zA-Z]{2,}/.test(text || '');
+  }
+  // 生成翻译按钮 HTML（仅当标题或简介含英文时才渲染）
+  function translateBtnHTML(item) {
+    const title = cleanBannerTitle(item.title || '');
+    const summary = item.summary || '';
+    if (!hasEnglish(title) && !hasEnglish(summary)) return '';
+    return `<button class="translate-btn" onclick="handleTranslateClick(event, this)">译</button>`;
+  }
+  window.handleTranslateClick = async function(ev, btn) {
+    ev.stopPropagation();
+    const card = btn.closest('.tl-item');
+    if (!card) return;
+    // 已翻译 -> 还原
+    if (btn.classList.contains('translated')) {
+      const titleEl = card.querySelector('.card-title');
+      const summaryEl = card.querySelector('.card-summary');
+      const detailP = card.querySelector('.detail > p');
+      if (titleEl && card.dataset.origTitle !== undefined) {
+        const hint = titleEl.querySelector('.detail-hint');
+        titleEl.textContent = card.dataset.origTitle;
+        if (hint) titleEl.appendChild(hint);
+      }
+      if (summaryEl && card.dataset.origSummary !== undefined) summaryEl.textContent = card.dataset.origSummary;
+      if (detailP && card.dataset.origDetail !== undefined) detailP.textContent = card.dataset.origDetail;
+      btn.textContent = '译';
+      btn.classList.remove('translated');
+      return;
+    }
+    // 读取当前标题、简介、详情文本
+    const titleEl = card.querySelector('.card-title');
+    const summaryEl = card.querySelector('.card-summary');
+    const detailP = card.querySelector('.detail > p');
+    const origTitle = titleEl ? (titleEl.childNodes[0]?.textContent || '').trim() : '';
+    const origSummary = summaryEl ? summaryEl.textContent.trim() : '';
+    const origDetail = detailP ? detailP.textContent.trim() : '';
+    // 收集需翻译的文本（仅含英文的）
+    const texts = [];
+    if (hasEnglish(origTitle)) texts.push(origTitle);
+    if (hasEnglish(origSummary)) texts.push(origSummary);
+    if (origDetail && hasEnglish(origDetail) && origDetail !== origSummary) texts.push(origDetail);
+    if (texts.length === 0) return;
+    // 保存原文
+    card.dataset.origTitle = origTitle;
+    card.dataset.origSummary = origSummary;
+    if (origDetail) card.dataset.origDetail = origDetail;
+    const combinedText = texts.join('\n---\n');
+    btn.textContent = '翻译中…';
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: combinedText })
+      });
+      const data = await r.json();
+      if (data.code !== 0) throw new Error(data.message || '翻译失败');
+      const translatedText = data.text;
+      const results = translatedText.split('\n---\n');
+      let idx = 0;
+      if (hasEnglish(origTitle) && results[idx]) {
+        const hint = titleEl.querySelector('.detail-hint');
+        titleEl.textContent = results[idx];
+        if (hint) titleEl.appendChild(hint);
+        idx++;
+      }
+      if (hasEnglish(origSummary) && results[idx]) {
+        summaryEl.textContent = results[idx];
+        idx++;
+      }
+      if (card.dataset.origDetail !== undefined && results[idx] && origDetail !== origSummary) {
+        detailP.textContent = results[idx];
+      }
+      btn.textContent = '还原';
+      btn.classList.add('translated');
+    } catch (e) {
+      btn.textContent = '失败';
+      setTimeout(() => { btn.textContent = '译'; }, 2000);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
   // ============ 登录/注册/登出逻辑 ============
   function setNavLoggedIn(userId) {
     const loginBtn = document.getElementById('loginBtn');
@@ -856,6 +942,7 @@
                     <span class="source">来源：${n.source}</span>
                     <div class="card-foot-btns">
                       ${favBtnHTML(n)}
+                      ${translateBtnHTML(n)}
                       <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 -></a>
                     </div>
                   </div>
@@ -968,6 +1055,7 @@
                 <span class="source">来源：${n.source || '未知'}</span>
                 <div class="card-foot-btns">
                   ${favBtnHTML(n)}
+                  ${translateBtnHTML(n)}
                   ${n.sourceLink ? `<a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 -></a>` : ''}
                 </div>
               </div>

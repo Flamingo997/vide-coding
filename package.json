@@ -1,0 +1,7 @@
+{
+  "name": "yingxinxian",
+  "private": true,
+  "dependencies": {
+    "openai": "^4.77.0"
+  }
+}
