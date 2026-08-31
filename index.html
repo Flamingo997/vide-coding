@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=new15">
+<link rel="stylesheet" href="styles.css?v=new16">
 </head>
 <body>
 
@@ -396,10 +396,54 @@
   FAV_SET = new Set(getLocalFavorites().map(f => f.id));
   updateFavBadge();
 
-  // ============ 翻译功能：英文标题/简介 -> 中文（DeepSeek API 代理） ============
+  // ============ AI 翻译 + 改写功能（DeepSeek API 代理） ============
   // 检测文本是否包含英文（至少2个连续拉丁字母）
   function hasEnglish(text) {
     return /[a-zA-Z]{2,}/.test(text || '');
+  }
+  // 共享：还原卡片原始文本（翻译/改写均调用）
+  function restoreOriginalText(card) {
+    const titleEl = card.querySelector('.card-title');
+    const summaryEl = card.querySelector('.card-summary');
+    const detailP = card.querySelector('.detail > p');
+    if (titleEl && card.dataset.origTitle !== undefined) {
+      const hint = titleEl.querySelector('.detail-hint');
+      titleEl.textContent = card.dataset.origTitle;
+      if (hint) titleEl.appendChild(hint);
+    }
+    if (summaryEl && card.dataset.origSummary !== undefined) summaryEl.textContent = card.dataset.origSummary;
+    if (detailP && card.dataset.origDetail !== undefined) detailP.textContent = card.dataset.origDetail;
+    const translateBtn = card.querySelector('.translate-btn');
+    if (translateBtn) { translateBtn.classList.remove('translated'); translateBtn.textContent = '译'; }
+    const rewriteBtn = card.querySelector('.rewrite-btn');
+    if (rewriteBtn) { rewriteBtn.classList.remove('rewritten'); rewriteBtn.textContent = '改写'; }
+  }
+  // 仅首次保存原文（翻译和改写共用 card.dataset）
+  function saveOriginalIfNeeded(card, title, summary, detail) {
+    if (card.dataset.origTitle !== undefined) return;
+    card.dataset.origTitle = title;
+    card.dataset.origSummary = summary;
+    if (detail) card.dataset.origDetail = detail;
+  }
+  // 替换卡片文本（保留 detail-hint span）
+  function applyTextToCard(card, results, origTitle, origSummary, origDetail) {
+    const titleEl = card.querySelector('.card-title');
+    const summaryEl = card.querySelector('.card-summary');
+    const detailP = card.querySelector('.detail > p');
+    let idx = 0;
+    if (origTitle && results[idx]) {
+      const hint = titleEl.querySelector('.detail-hint');
+      titleEl.textContent = results[idx];
+      if (hint) titleEl.appendChild(hint);
+      idx++;
+    }
+    if (origSummary && origSummary !== origTitle && results[idx]) {
+      summaryEl.textContent = results[idx];
+      idx++;
+    }
+    if (origDetail && origDetail !== origSummary && results[idx]) {
+      detailP.textContent = results[idx];
+    }
   }
   // 生成翻译按钮 HTML（仅当标题或简介含英文时才渲染）
   function translateBtnHTML(item) {
@@ -414,18 +458,7 @@
     if (!card) return;
     // 已翻译 -> 还原
     if (btn.classList.contains('translated')) {
-      const titleEl = card.querySelector('.card-title');
-      const summaryEl = card.querySelector('.card-summary');
-      const detailP = card.querySelector('.detail > p');
-      if (titleEl && card.dataset.origTitle !== undefined) {
-        const hint = titleEl.querySelector('.detail-hint');
-        titleEl.textContent = card.dataset.origTitle;
-        if (hint) titleEl.appendChild(hint);
-      }
-      if (summaryEl && card.dataset.origSummary !== undefined) summaryEl.textContent = card.dataset.origSummary;
-      if (detailP && card.dataset.origDetail !== undefined) detailP.textContent = card.dataset.origDetail;
-      btn.textContent = '译';
-      btn.classList.remove('translated');
+      restoreOriginalText(card);
       return;
     }
     // 读取当前标题、简介、详情文本
@@ -441,10 +474,7 @@
     if (hasEnglish(origSummary)) texts.push(origSummary);
     if (origDetail && hasEnglish(origDetail) && origDetail !== origSummary) texts.push(origDetail);
     if (texts.length === 0) return;
-    // 保存原文
-    card.dataset.origTitle = origTitle;
-    card.dataset.origSummary = origSummary;
-    if (origDetail) card.dataset.origDetail = origDetail;
+    saveOriginalIfNeeded(card, origTitle, origSummary, origDetail);
     const combinedText = texts.join('\n---\n');
     btn.textContent = '翻译中…';
     btn.disabled = true;
@@ -456,24 +486,12 @@
       });
       const data = await r.json();
       if (data.code !== 0) throw new Error(data.message || '翻译失败');
-      const translatedText = data.text;
-      const results = translatedText.split('\n---\n');
-      let idx = 0;
-      if (hasEnglish(origTitle) && results[idx]) {
-        const hint = titleEl.querySelector('.detail-hint');
-        titleEl.textContent = results[idx];
-        if (hint) titleEl.appendChild(hint);
-        idx++;
-      }
-      if (hasEnglish(origSummary) && results[idx]) {
-        summaryEl.textContent = results[idx];
-        idx++;
-      }
-      if (card.dataset.origDetail !== undefined && results[idx] && origDetail !== origSummary) {
-        detailP.textContent = results[idx];
-      }
+      applyTextToCard(card, data.text.split('\n---\n'), origTitle, origSummary, origDetail);
       btn.textContent = '还原';
       btn.classList.add('translated');
+      // 重置改写按钮
+      const rewriteBtn = card.querySelector('.rewrite-btn');
+      if (rewriteBtn) { rewriteBtn.classList.remove('rewritten'); rewriteBtn.textContent = '改写'; }
     } catch (e) {
       btn.textContent = '失败';
       setTimeout(() => { btn.textContent = '译'; }, 2000);
@@ -481,6 +499,98 @@
       btn.disabled = false;
     }
   };
+
+  // ============ AI 简介改写功能 ============
+  const REWRITE_STYLES = [
+    { key: 'humorous', label: '幽默风趣' },
+    { key: 'suspense', label: '悬疑紧张' },
+    { key: 'poetic', label: '文艺诗意' },
+    { key: 'concise', label: '简洁有力' },
+    { key: 'critic', label: '专业影评' },
+    { key: 'recommend', label: '口语安利' },
+  ];
+  // 生成改写按钮 HTML（所有卡片都显示）
+  function rewriteBtnHTML() {
+    return `<button class="rewrite-btn" onclick="handleRewriteClick(event, this)">改写</button>`;
+  }
+  window.handleRewriteClick = function(ev, btn) {
+    ev.stopPropagation();
+    const card = btn.closest('.tl-item');
+    if (!card) return;
+    // 已改写 -> 还原
+    if (btn.classList.contains('rewritten')) {
+      restoreOriginalText(card);
+      return;
+    }
+    // 关闭已打开的菜单
+    const existing = document.querySelector('.rewrite-menu');
+    if (existing) { existing.remove(); return; }
+    // 创建风格菜单
+    const menu = document.createElement('div');
+    menu.className = 'rewrite-menu';
+    menu.innerHTML = REWRITE_STYLES.map(s =>
+      `<div class="rewrite-menu-item" data-style="${s.key}">${s.label}</div>`
+    ).join('');
+    const btns = btn.parentElement;
+    btns.style.position = 'relative';
+    btns.appendChild(menu);
+    // 菜单项点击
+    menu.querySelectorAll('.rewrite-menu-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleRewriteStyle(item.dataset.style, card, btn);
+        menu.remove();
+      });
+    });
+    // 点击外部关闭
+    setTimeout(() => {
+      const close = (e) => {
+        if (!menu.contains(e.target) && e.target !== btn) {
+          menu.remove();
+          document.removeEventListener('click', close);
+        }
+      };
+      document.addEventListener('click', close);
+    }, 0);
+  };
+  async function handleRewriteStyle(style, card, btn) {
+    const titleEl = card.querySelector('.card-title');
+    const summaryEl = card.querySelector('.card-summary');
+    const detailP = card.querySelector('.detail > p');
+    const origTitle = titleEl ? (titleEl.childNodes[0]?.textContent || '').trim() : '';
+    const origSummary = summaryEl ? summaryEl.textContent.trim() : '';
+    const origDetail = detailP ? detailP.textContent.trim() : '';
+    // 收集需改写的文本
+    const texts = [];
+    if (origTitle) texts.push(origTitle);
+    if (origSummary && origSummary !== origTitle) texts.push(origSummary);
+    if (origDetail && origDetail !== origSummary) texts.push(origDetail);
+    if (texts.length === 0) return;
+    saveOriginalIfNeeded(card, origTitle, origSummary, origDetail);
+    const combinedText = texts.join('\n---\n');
+    btn.textContent = '改写中…';
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: combinedText, style })
+      });
+      const data = await r.json();
+      if (data.code !== 0) throw new Error(data.message || '改写失败');
+      applyTextToCard(card, data.text.split('\n---\n'), origTitle, origSummary, origDetail);
+      btn.textContent = '原文';
+      btn.classList.add('rewritten');
+      // 重置翻译按钮
+      const translateBtn = card.querySelector('.translate-btn');
+      if (translateBtn) { translateBtn.classList.remove('translated'); translateBtn.textContent = '译'; }
+    } catch (e) {
+      btn.textContent = '失败';
+      setTimeout(() => { btn.textContent = '改写'; }, 2000);
+    } finally {
+      btn.disabled = false;
+    }
+  }
 
   // ============ 登录/注册/登出逻辑 ============
   function setNavLoggedIn(userId) {
@@ -943,6 +1053,7 @@
                     <div class="card-foot-btns">
                       ${favBtnHTML(n)}
                       ${translateBtnHTML(n)}
+                      ${rewriteBtnHTML()}
                       <a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 -></a>
                     </div>
                   </div>
@@ -1056,6 +1167,7 @@
                 <div class="card-foot-btns">
                   ${favBtnHTML(n)}
                   ${translateBtnHTML(n)}
+                  ${rewriteBtnHTML()}
                   ${n.sourceLink ? `<a class="src-btn" href="${n.sourceLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看来源 -></a>` : ''}
                 </div>
               </div>
