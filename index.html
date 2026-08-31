@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=new16">
+<link rel="stylesheet" href="styles.css?v=new17">
 </head>
 <body>
 
@@ -54,6 +54,7 @@
     <a class="nav-item" data-view="timeline" data-type="anime"><span class="nav-dot" style="background:#FFB800"></span>动漫</a>
     <a class="nav-item optional" data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
     <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
+    <a class="nav-item rec-nav" data-view="recommend" id="recNav">✨ <span class="rec-label">推荐</span></a>
     <a class="nav-item fav-nav" data-view="favorites" id="favNav">★ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
@@ -171,6 +172,15 @@
       <button class="pill active" data-fav-type="all">全部</button>
     </div>
     <div class="timeline" id="favTimeline"></div>
+  </div>
+</main>
+
+<!-- 个性化推荐视图 -->
+<main id="recView" hidden>
+  <div class="tl-page">
+    <h1 class="tl-title">为你推荐 ✨</h1>
+    <p class="rec-subtitle" id="recSubtitle">基于你的收藏偏好生成</p>
+    <div class="rec-grid" id="recGrid"></div>
   </div>
 </main>
 
@@ -818,16 +828,18 @@
   function goView(view, type, title) {
     currentView = view;
     // home 和 favorites 视图不需要 currentType，保持空字符串以匹配导航 active 条件
-    currentType = (view === 'home' || view === 'favorites') ? '' : (type || 'all');
+    currentType = (view === 'home' || view === 'favorites' || view === 'recommend') ? '' : (type || 'all');
     // 只有明确传了 title 才消费性定位，其他入口不设置
     pendingScrollTitle = title || null;
     document.getElementById('homeView').hidden = view !== 'home';
     document.getElementById('favView').hidden = view !== 'favorites';
+    document.getElementById('recView').hidden = view !== 'recommend';
     document.getElementById('tlView').hidden = view !== 'timeline';
 
     // 视图切换过渡动画（淡入 + 上移）
     const showEl = view === 'home' ? document.getElementById('homeView')
       : view === 'favorites' ? document.getElementById('favView')
+      : view === 'recommend' ? document.getElementById('recView')
       : document.getElementById('tlView');
     showEl.classList.remove('view-enter');
     void showEl.offsetWidth; // 强制重排以重启动画
@@ -853,6 +865,9 @@
     }
     if (view === 'favorites') {
       renderFavorites();
+    }
+    if (view === 'recommend') {
+      renderRecommend();
     }
   }
 
@@ -1189,6 +1204,143 @@
           </article>
         </div>`;
     }).join('');
+  }
+
+  // ============ 个性化推荐：基于收藏的协同过滤 ============
+  // 提取流派标签（detail.cast 如 "剧情 / 科幻 / 惊悚"）
+  function extractGenres(castStr) {
+    return (castStr || '').split(/[\/,，、\s]+/).map(g => g.trim()).filter(g => g.length >= 2);
+  }
+  // 提取关键词（按标点分词，保留长度>=2的词）
+  function extractKeywords(text) {
+    return (text || '').split(/[\s,，。、；;：:！!？?《》""''（）()【】\[\]\n\r]+/).filter(w => w.length >= 2);
+  }
+
+  async function renderRecommend() {
+    const favs = await getFavoritesData();
+    const container = document.getElementById('recGrid');
+    const subtitle = document.getElementById('recSubtitle');
+
+    if (!favs.length) {
+      subtitle.textContent = '先收藏几部影片，就能获得个性化推荐';
+      container.innerHTML = '<div class="empty-tip">还没有收藏任何影片，去首页看看吧 ✨</div>';
+      return;
+    }
+
+    // ===== 1. 构建用户偏好画像 =====
+    const favIds = new Set(favs.map(f => { ensureItemId(f); return f.id; }));
+    const typeFreq = {};    // type -> 出现次数
+    const genreFreq = {};   // 流派 -> 出现次数
+    const keywordFreq = {}; // 关键词 -> 出现次数
+    const langFreq = { '华语': 0, '外语': 0 };
+
+    favs.forEach(f => {
+      if (f.type) typeFreq[f.type] = (typeFreq[f.type] || 0) + 1;
+      extractGenres(f.detail?.cast).forEach(g => genreFreq[g] = (genreFreq[g] || 0) + 1);
+      const ep = f.detail?.ep || '';
+      if (ep.includes('华语')) langFreq['华语']++;
+      if (ep.includes('外语') || ep.includes('海外')) langFreq['外语']++;
+      extractKeywords(f.summary).forEach(w => keywordFreq[w] = (keywordFreq[w] || 0) + 1);
+    });
+
+    // 只保留出现>=2次的关键词（共同主题），取频次最高的20个
+    const topKeywords = Object.entries(keywordFreq)
+      .filter(([_, c]) => c >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([w]) => w);
+    const keywordSet = new Set(topKeywords);
+
+    const maxTypeFreq = Math.max(...Object.values(typeFreq), 1);
+
+    // 找一个匹配的收藏片名用于推荐理由
+    const favByType = {};
+    favs.forEach(f => {
+      if (!favByType[f.type]) favByType[f.type] = f;
+    });
+
+    // ===== 2. 对 NEWS 中未收藏的 item 评分 =====
+    const scored = NEWS.map(item => {
+      ensureItemId(item);
+      if (favIds.has(item.id)) return null;
+
+      let score = 0;
+      const reasons = [];
+
+      // 类型匹配 +10 * 归一化频次
+      if (typeFreq[item.type]) {
+        score += 10 * (typeFreq[item.type] / maxTypeFreq);
+        const typeName = TYPE_MAP[item.type]?.name || item.type;
+        const favInType = favByType[item.type];
+        if (favInType) {
+          reasons.push(`与《${cleanBannerTitle(favInType.title)}》同属${typeName}`);
+        } else {
+          reasons.push(`您偏爱${typeName}类内容`);
+        }
+      }
+
+      // 流派匹配 +5 / 个
+      const itemGenres = extractGenres(item.detail?.cast);
+      const matched = itemGenres.filter(g => genreFreq[g]);
+      if (matched.length > 0) {
+        score += 5 * matched.length;
+        reasons.push(`同属${[...new Set(matched)].slice(0, 2).join('/')}类型`);
+      }
+
+      // 关键词匹配 +2 / 个
+      const words = extractKeywords(item.summary);
+      const kwMatches = words.filter(w => keywordSet.has(w));
+      score += 2 * kwMatches.length;
+
+      // 语言偏好 +3
+      const ep = item.detail?.ep || '';
+      if (ep.includes('华语') && langFreq['华语'] > 0) {
+        score += 3;
+        if (!reasons.some(r => r.includes('华语'))) reasons.push('您偏好华语内容');
+      }
+      if ((ep.includes('外语') || ep.includes('海外')) && langFreq['外语'] > 0) {
+        score += 3;
+        if (!reasons.some(r => r.includes('外语'))) reasons.push('您偏好外语内容');
+      }
+
+      if (score === 0) return null;
+      return { item, score, reasons: reasons.slice(0, 2) };
+    }).filter(Boolean);
+
+    // ===== 3. 排序取 Top 12 =====
+    scored.sort((a, b) => b.score - a.score);
+    const recs = scored.slice(0, 12);
+
+    if (recs.length === 0) {
+      subtitle.textContent = '暂无足够数据生成推荐';
+      container.innerHTML = '<div class="empty-tip">多收藏几部不同类型的影片，推荐会更精准 ✨</div>';
+      return;
+    }
+
+    subtitle.textContent = `基于你收藏的 ${favs.length} 部影片生成 · 共 ${recs.length} 部推荐`;
+
+    // ===== 4. 渲染推荐卡片网格 =====
+    container.innerHTML = recs.map(({ item: n, reasons }) => {
+      const t = TYPE_MAP[n.type] || { name: '其他', color: '#999' };
+      const reason = reasons.join(' · ') || '基于你的收藏偏好';
+      const safeTitle = n.title.replace(/"/g, '&quot;');
+      return `
+        <div class="rec-card" data-type="${n.type}" data-title="${safeTitle}" style="--tc:${t.color}">
+          <div class="rec-reason">${reason}</div>
+          <div class="cat-poster-wrap">
+            <img src="${n.poster || POSTER_MAP[n.title] || 'posters/default.jpg'}" alt="${n.title}" loading="lazy" onerror="this.src='posters/default.jpg'">
+          </div>
+          <div class="cat-card-info">
+            <div class="cat-card-title">${cleanBannerTitle(n.title)}</div>
+            <div class="cat-card-desc">${oneLineSummary(n.summary)}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    // 点击跳转时间线并定位
+    container.querySelectorAll('.rec-card').forEach(el => {
+      el.addEventListener('click', () => goView('timeline', el.dataset.type, el.dataset.title));
+    });
   }
 
   function renderCatGroups() {

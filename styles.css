@@ -451,6 +451,31 @@ body {
 @media (max-width: 1000px) {
   .cat-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ===== 个性化推荐 ===== */
+.rec-nav { font-size: 14px; }
+.rec-subtitle { font-size: 14px; color: var(--gray-3); margin-bottom: 20px; }
+.rec-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
+}
+.rec-card {
+  position: relative; cursor: pointer; border-radius: 12px; overflow: hidden;
+  background: #fff; border: 1px solid #F0F3F8; transition: all 0.2s;
+}
+.rec-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.1); transform: translateY(-2px); border-color: var(--tc, #2F86FF); }
+.rec-reason {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+  padding: 6px 10px; font-size: 11px; font-weight: 500;
+  color: #fff; background: linear-gradient(135deg, var(--tc, #2F86FF), var(--tc, #2F86FF)cc);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rec-card .cat-poster-wrap { padding-top: 26px; }
+@media (max-width: 1000px) {
+  .rec-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 700px) {
+  .rec-grid { grid-template-columns: repeat(2, 1fr); }
+}
 @media (max-width: 700px) {
   .cat-grid { grid-template-columns: 1fr; gap: 16px; }
   .banner { height: 440px; }
