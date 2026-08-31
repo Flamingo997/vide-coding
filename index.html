@@ -1530,7 +1530,7 @@
     let lastFlashHash = '';
     async function loadFlashData({ silent = false } = {}) {
       try {
-        const r = await fetch('/api/huanqiu');
+        const r = await fetch('/api/huanqiu?t=' + Date.now(), { cache: 'no-cache' });
         if (!r.ok) return;
         const data = await r.json();
         if (data && (data.code === 0 || data.code === 206) && Array.isArray(data.news) && data.news.length > 0) {
