@@ -431,18 +431,26 @@
     const summaryEl = card.querySelector('.card-summary');
     const detailP = card.querySelector('.detail > p');
     let idx = 0;
+    const resultMap = {}; // 原文 -> 结果映射，用于复用相同文本的翻译
     if (origTitle && results[idx]) {
       const hint = titleEl.querySelector('.detail-hint');
       titleEl.textContent = results[idx];
       if (hint) titleEl.appendChild(hint);
+      resultMap[origTitle] = results[idx];
       idx++;
     }
     if (origSummary && origSummary !== origTitle && results[idx]) {
       summaryEl.textContent = results[idx];
+      resultMap[origSummary] = results[idx];
       idx++;
     }
-    if (origDetail && origDetail !== origSummary && results[idx]) {
-      detailP.textContent = results[idx];
+    if (detailP && origDetail) {
+      // 详情与标题/简介相同时复用对应结果，否则用独立结果
+      if (resultMap[origDetail]) {
+        detailP.textContent = resultMap[origDetail];
+      } else if (results[idx]) {
+        detailP.textContent = results[idx];
+      }
     }
   }
   // 生成翻译按钮 HTML（仅当标题或简介含英文时才渲染）
