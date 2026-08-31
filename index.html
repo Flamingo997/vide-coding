@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=new17">
+<link rel="stylesheet" href="styles.css?v=new18">
 </head>
 <body>
 
@@ -1307,25 +1307,68 @@
       return { item, score, reasons: reasons.slice(0, 2) };
     }).filter(Boolean);
 
-    // ===== 3. 排序取 Top 12 =====
+    // ===== 3. 排序内容协同过滤结果 =====
     scored.sort((a, b) => b.score - a.score);
-    const recs = scored.slice(0, 12);
 
-    if (recs.length === 0) {
+    // ===== 4. 调用 TMDB 推荐接口（方案 B） =====
+    subtitle.textContent = '正在从 TMDB 获取智能推荐…';
+    const tmdbIds = favs.map(f => f.id).filter(id => id && /^tmdb-(movie|tv|docmovie)-\d+$/.test(id));
+    let tmdbRecs = [];
+    if (tmdbIds.length > 0) {
+      try {
+        const r = await fetch('/api/recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: tmdbIds })
+        });
+        const data = await r.json();
+        if (data.code === 0) tmdbRecs = data.data || [];
+      } catch (_) {} // 静默失败，仅用内容协同过滤
+    }
+
+    // ===== 5. 合并：TMDB 推荐优先 + 内容协同过滤补位 =====
+    const favTitles = new Set(favs.map(f => cleanBannerTitle(f.title)));
+    const seenTitles = new Set();
+    const merged = [];
+    const MAX_RECS = 12;
+
+    // TMDB 推荐优先
+    for (const rec of tmdbRecs) {
+      if (merged.length >= MAX_RECS) break;
+      const title = cleanBannerTitle(rec.title);
+      if (favTitles.has(title) || seenTitles.has(title)) continue;
+      seenTitles.add(title);
+      merged.push({ item: rec, reasons: [rec.detail?.ep || 'TMDB 相似推荐'] });
+    }
+    // 内容协同过滤补位
+    for (const { item, reasons } of scored) {
+      if (merged.length >= MAX_RECS) break;
+      const title = cleanBannerTitle(item.title);
+      if (favTitles.has(title) || seenTitles.has(title)) continue;
+      seenTitles.add(title);
+      merged.push({ item, reasons });
+    }
+
+    if (merged.length === 0) {
       subtitle.textContent = '暂无足够数据生成推荐';
       container.innerHTML = '<div class="empty-tip">多收藏几部不同类型的影片，推荐会更精准 ✨</div>';
       return;
     }
 
-    subtitle.textContent = `基于你收藏的 ${favs.length} 部影片生成 · 共 ${recs.length} 部推荐`;
+    const tmdbCount = merged.filter(m => m.item.id?.startsWith('tmdb-rec-')).length;
+    const parts = [`基于你收藏的 ${favs.length} 部影片`];
+    if (tmdbCount > 0) parts.push(`TMDB 智能推荐 ${tmdbCount} 部`);
+    parts.push(`共 ${merged.length} 部推荐`);
+    subtitle.textContent = parts.join(' · ');
 
-    // ===== 4. 渲染推荐卡片网格 =====
-    container.innerHTML = recs.map(({ item: n, reasons }) => {
+    // ===== 6. 渲染推荐卡片网格 =====
+    container.innerHTML = merged.map(({ item: n, reasons }) => {
       const t = TYPE_MAP[n.type] || { name: '其他', color: '#999' };
       const reason = reasons.join(' · ') || '基于你的收藏偏好';
       const safeTitle = n.title.replace(/"/g, '&quot;');
+      const isTMDB = n.id?.startsWith('tmdb-rec-');
       return `
-        <div class="rec-card" data-type="${n.type}" data-title="${safeTitle}" style="--tc:${t.color}">
+        <div class="rec-card${isTMDB ? ' rec-card-tmdb' : ''}" data-type="${n.type}" data-title="${safeTitle}" style="--tc:${t.color}">
           <div class="rec-reason">${reason}</div>
           <div class="cat-poster-wrap">
             <img src="${n.poster || POSTER_MAP[n.title] || 'posters/default.jpg'}" alt="${n.title}" loading="lazy" onerror="this.src='posters/default.jpg'">
