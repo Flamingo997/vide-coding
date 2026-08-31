@@ -1368,7 +1368,7 @@
       const safeTitle = n.title.replace(/"/g, '&quot;');
       const isTMDB = n.id?.startsWith('tmdb-rec-');
       return `
-        <div class="rec-card${isTMDB ? ' rec-card-tmdb' : ''}" data-type="${n.type}" data-title="${safeTitle}" style="--tc:${t.color}">
+        <div class="rec-card${isTMDB ? ' rec-card-tmdb' : ''}" data-type="${n.type}" data-title="${safeTitle}" data-source-link="${n.sourceLink || ''}" style="--tc:${t.color}">
           <div class="rec-reason">${reason}</div>
           <div class="cat-poster-wrap">
             <img src="${n.poster || POSTER_MAP[n.title] || 'posters/default.jpg'}" alt="${n.title}" loading="lazy" onerror="this.src='posters/default.jpg'">
@@ -1380,9 +1380,15 @@
         </div>`;
     }).join('');
 
-    // 点击跳转时间线并定位
+    // 点击：TMDB 推荐跳转 TMDB 页面，内容协同过滤跳转时间线
     container.querySelectorAll('.rec-card').forEach(el => {
-      el.addEventListener('click', () => goView('timeline', el.dataset.type, el.dataset.title));
+      el.addEventListener('click', () => {
+        if (el.classList.contains('rec-card-tmdb') && el.dataset.sourceLink) {
+          window.open(el.dataset.sourceLink, '_blank');
+        } else {
+          goView('timeline', el.dataset.type, el.dataset.title);
+        }
+      });
     });
   }
 
