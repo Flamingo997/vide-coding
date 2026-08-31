@@ -22,7 +22,7 @@ const MOVIE_GENRE_TYPE = {
 // 双语言并行请求：zh-CN 优先，en-US 兜底
 async function tmdb(path, key, lang = 'zh-CN') {
   const sep = path.includes('?') ? '&' : '?';
-  const r = await fetch(`${BASE}${path}${sep}api_key=${key}&language=${lang}`);
+  const r = await fetch(`${BASE}${path}${sep}api_key=${key}&language=${lang}&include_adult=false`);
   if (!r.ok) throw new Error('TMDB 请求失败: ' + r.status);
   return r.json();
 }
@@ -402,15 +402,27 @@ export async function onRequestGet(context) {
       }
     });
 
-    // 过滤
-    const BLOCK_TITLES = ['100个男生与我', '100 Boyfriends', 'Bonnie Blue', 'Doble tentación', 'Doble Tentación'];
+    // 不雅内容过滤：关键词黑名单（标题+简介匹配）
+    const ADULT_KEYWORDS = [
+      'sex', 'erotic', 'porn', 'xxx', 'nude', 'naked', 'sensual', 'libido',
+      'masturbat', 'orgasm', 'arousal', 'seduce', 'lustful', 'softcore', 'hardcore',
+      'blue movie', 'adult film', 'sex toy', 'sex tape', 'stripper',
+      '性爱', '情色', '色情', '成人片', '裸体', '裸露', '肉欲', '春宫', '风月',
+      '性器', '做爱', '诱惑片', '成人内容',
+      'Bonnie Blue', 'Doble tentación', '100 Boyfriends', '100个男生'
+    ];
+    function isAdultContent(title, summary) {
+      const text = ((title || '') + ' ' + (summary || '')).toLowerCase();
+      return ADULT_KEYWORDS.some(kw => text.includes(kw.toLowerCase()));
+    }
+
     // 全局日期下限：所有内容必须 >= 2023-01-01，杜绝年代久远的影片混入
     const MIN_DATE = '2023-01-01';
     let list = items
-      .filter(n => n.date && n.date >= MIN_DATE)   // 日期下限：2026年起
+      .filter(n => n.date && n.date >= MIN_DATE)
       .filter(n => n.poster)
-      .filter(n => !BLOCK_TITLES.some(bt => n.title.includes(bt)))
-      .filter(n => !BLOCK_TITLES.some(bt => (n.summary || '').includes(bt)))
+      .filter(n => !isAdultContent(n.title, n.summary))
+      .filter(n => !isAdultContent(n.title, n.detail?.intro))
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // ===== 华语影片简介补全：列表接口返回的 overview 为空或英文时，调详情接口拉中文简介 =====
