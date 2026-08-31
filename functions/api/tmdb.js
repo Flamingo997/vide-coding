@@ -27,20 +27,6 @@ async function tmdb(path, key, lang = 'zh-CN') {
   return r.json();
 }
 
-// 多页抓取 discover 端点，合并所有页的结果
-async function tmdbPages(basePath, key, lang, pages = 2) {
-  const fetches = [];
-  for (let i = 1; i <= pages; i++) {
-    const p = basePath.includes('page=')
-      ? basePath.replace(/page=\d+/, `page=${i}`)
-      : basePath + (basePath.includes('?') ? '&' : '?') + `page=${i}`;
-    fetches.push(tmdb(p, key, lang));
-  }
-  const results = await Promise.all(fetches);
-  const all = results.flatMap(r => r.results || []);
-  return { ...results[0], results: all };
-}
-
 function cut(text, len) {
   if (!text) return '';
   return text.length > len ? text.slice(0, len) + '…' : text;
@@ -191,12 +177,16 @@ export async function onRequestGet(context) {
     const [
       nowPlayingZh, nowPlayingEn,
       upcomingZh, upcomingEn,
-      movieDiscoverZh, movieDiscoverEn,
       onAirZh, onAirEn,
+      // 电视剧（drama）：按日期过滤的 discover 替代旧的 tv/popular
       dramaDiscoverZh, dramaDiscoverEn,
+      // 动漫（anime）：新增专属 discover 请求
       animeDiscoverZh, animeDiscoverEn,
+      // 综艺（show）：加日期过滤
       showZh, showEn,
+      // 纪录片电影（doc）：加日期过滤
       docMoviesZh, docMoviesEn,
+      // 纪录片剧集（doc）：加日期过滤
       docTvZh, docTvEn,
       movieGenres, tvGenres
     ] = await Promise.all([
@@ -204,26 +194,23 @@ export async function onRequestGet(context) {
       tmdb('/movie/now_playing?region=CN&page=1', key, 'en-US'),
       tmdb('/movie/upcoming?region=CN&page=1', key, 'zh-CN'),
       tmdb('/movie/upcoming?region=CN&page=1', key, 'en-US'),
-      // 电影 discover：按上映日期降序，2页zh-CN + 1页en-US
-      tmdbPages(`/discover/movie?primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=primary_release_date.desc&page=1`, key, 'zh-CN', 2),
-      tmdb(`/discover/movie?primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=primary_release_date.desc&page=1`, key, 'en-US'),
       tmdb('/tv/on_the_air?page=1', key, 'zh-CN'),
       tmdb('/tv/on_the_air?page=1', key, 'en-US'),
-      // 电视剧：按首播日期降序，2页zh-CN + 1页en-US
-      tmdbPages(`/discover/tv?with_genres=18,10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=first_air_date.desc&page=1`, key, 'zh-CN', 2),
-      tmdb(`/discover/tv?with_genres=18,10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=first_air_date.desc&page=1`, key, 'en-US'),
-      // 动漫：按首播日期降序
-      tmdbPages(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=first_air_date.desc&page=1`, key, 'zh-CN', 2),
-      tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=first_air_date.desc&page=1`, key, 'en-US'),
-      // 综艺：按首播日期降序
-      tmdbPages(`/discover/tv?with_genres=10764,10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=first_air_date.desc&page=1`, key, 'zh-CN', 2),
-      tmdb(`/discover/tv?with_genres=10764,10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=first_air_date.desc&page=1`, key, 'en-US'),
-      // 纪录片电影：按上映日期降序
-      tmdbPages(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=primary_release_date.desc&page=1`, key, 'zh-CN', 2),
-      tmdb(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=primary_release_date.desc&page=1`, key, 'en-US'),
-      // 纪录片剧集：按首播日期降序
-      tmdbPages(`/discover/tv?with_genres=99&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=first_air_date.desc&page=1`, key, 'zh-CN', 2),
-      tmdb(`/discover/tv?with_genres=99&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=first_air_date.desc&page=1`, key, 'en-US'),
+      // 电视剧：genre 18(剧情) 10766(肥皂) 10765(科幻奇幻)，日期>=2024-01-01
+      tmdb(`/discover/tv?with_genres=18,10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=18,10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 动漫：genre 16(动画)，日期>=2026-06-01
+      tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 综艺：genre 10764(真人秀) 10767(脱口秀)，日期>=2026-06-01
+      tmdb(`/discover/tv?with_genres=10764,10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=10764,10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 纪录片电影：genre 99，日期>=2026-06-01
+      tmdb(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 纪录片剧集：genre 99，日期>=2026-06-01
+      tmdb(`/discover/tv?with_genres=99&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=99&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
       tmdb('/genre/movie/list', key, 'zh-CN'),
       tmdb('/genre/tv/list', key, 'zh-CN')
     ]);
@@ -235,7 +222,6 @@ export async function onRequestGet(context) {
     const enMovieMap = new Map();
     (nowPlayingEn.results || []).forEach(m => enMovieMap.set(m.id, m));
     (upcomingEn.results || []).forEach(m => enMovieMap.set(m.id, m));
-    (movieDiscoverEn.results || []).forEach(m => enMovieMap.set(m.id, m));
     (docMoviesEn.results || []).forEach(m => enMovieMap.set(m.id, m));
 
     const enTvMap = new Map();
@@ -249,7 +235,7 @@ export async function onRequestGet(context) {
     const seen = new Set();
 
     // 正在热映
-    (nowPlayingZh.results || []).forEach(m => {
+    (nowPlayingZh.results || []).slice(0, 14).forEach(m => {
       seen.add('m' + m.id);
       const en = enMovieMap.get(m.id) || {};
       const gids = m.genre_ids || en.genre_ids || [];
@@ -296,7 +282,7 @@ export async function onRequestGet(context) {
     });
 
     // 即将上映
-    (upcomingZh.results || []).forEach(m => {
+    (upcomingZh.results || []).slice(0, 14).forEach(m => {
       if (seen.has('m' + m.id)) return;
       const en = enMovieMap.get(m.id) || {};
       const gids = m.genre_ids || en.genre_ids || [];
@@ -343,41 +329,6 @@ export async function onRequestGet(context) {
       });
     });
 
-    // 电影 discover（补充 now_playing 和 upcoming 未覆盖的近期影片）
-    (movieDiscoverZh.results || []).forEach(m => {
-      if (seen.has('m' + m.id)) return;
-      seen.add('m' + m.id);
-      const en = enMovieMap.get(m.id) || {};
-      const gids = m.genre_ids || en.genre_ids || [];
-      let type = 'movie';
-      for (const id of gids) {
-        if (MOVIE_GENRE_TYPE[id]) { type = MOVIE_GENRE_TYPE[id]; break; }
-      }
-      const genres = gids.map(id => mg[id]).filter(Boolean).join(' / ');
-      const title = pickTitle(m, en, true);
-      const rawOverview = pickOverview(m, en);
-      const origLang = m.original_language || en.original_language || '';
-      const isZhOrigin = origLang === 'zh' || origLang === 'cn';
-      const voteAvg = m.vote_average || en.vote_average || 0;
-      const voteCount = m.vote_count || en.vote_count || 0;
-      const date = m.release_date || en.release_date;
-      const finalOverview = finalizeOverview({ overview: rawOverview, zhTitle: title, isZhOrigin, genres, date, isMovie: true, voteAvg, voteCount });
-      const isPast = new Date(date) < new Date();
-      items.push({
-        id: 'tmdb-movie-' + m.id,
-        date,
-        type,
-        event: isPast ? 'online' : 'schedule',
-        status: isPast ? 'done' : 'pending',
-        title: `《${title}》`,
-        summary: zhSummary(finalOverview),
-        source: 'TMDB',
-        sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
-        poster: (m.poster_path || en.poster_path) ? IMG + (m.poster_path || en.poster_path) : '',
-        detail: { intro: finalOverview, cast: genres || '暂无', platform: `TMDB 评分：${voteAvg.toFixed(1)}（${voteCount} 人评价）`, ep: isZhOrigin ? '华语影片' : '外语影片' }
-      });
-    });
-
     // 正在播出 + 各分类 discover 结果（电视剧/动漫/综艺/纪录片）
     const tvSeen = new Set();
     const allTvResults = [
@@ -396,7 +347,7 @@ export async function onRequestGet(context) {
 
     // 纪录片
     const docSeen = new Set();
-    (docMoviesZh.results || []).forEach(m => {
+    (docMoviesZh.results || []).slice(0, 10).forEach(m => {
       if (seen.has('m' + m.id) || docSeen.has(m.id)) return;
       docSeen.add(m.id);
       const en = enMovieMap.get(m.id) || {};
@@ -439,7 +390,7 @@ export async function onRequestGet(context) {
         }
       });
     });
-    (docTvZh.results || []).forEach(s => {
+    (docTvZh.results || []).slice(0, 10).forEach(s => {
       if (tvSeen.has(s.id) || docSeen.has(s.id)) return;
       docSeen.add(s.id);
       const en = enTvMap.get(s.id) || {};
