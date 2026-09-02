@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=new20">
+<link rel="stylesheet" href="styles.css?v=new21">
 </head>
 <body>
 
@@ -192,7 +192,7 @@
     <p class="rec-subtitle" id="briefSubtitle">基于你的收藏与浏览偏好，生成专属每日影讯简报</p>
     <div class="brief-actions">
       <button class="brief-generate-btn" id="briefGenBtn" onclick="generateBrief()">生成今日简报</button>
-      <button class="brief-regen-btn" id="briefRegenBtn" onclick="generateBrief()" hidden>🔄 换一版</button>
+      <button class="brief-regen-btn" id="briefRegenBtn" onclick="generateBrief(true)" hidden>🔄 换一版</button>
     </div>
     <div class="brief-body" id="briefBody"></div>
   </div>
@@ -887,6 +887,9 @@
     if (view === 'recommend') {
       renderRecommend();
     }
+    if (view === 'brief') {
+      renderBriefEntry();
+    }
   }
 
   document.querySelectorAll('.nav-item, .more-menu a, .brand').forEach(el => {
@@ -1471,9 +1474,68 @@
   let briefData = null;        // { items, x, weibo, xiaohongshu }
   let briefPlatform = 'x';     // 当前平台 Tab: x / weibo / xiaohongshu
 
-  window.generateBrief = async function() {
+  // ---- 当日缓存（每个用户每天最多调一次 AI）----
+  const BRIEF_CACHE_KEY = 'yingxinxian_brief_cache';
+  function briefTodayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  function getBriefCache() {
+    try {
+      const c = JSON.parse(localStorage.getItem(BRIEF_CACHE_KEY) || 'null');
+      if (c && c.date === briefTodayStr() && c.data && c.data.x) return c.data;
+    } catch (_) {}
+    return null;
+  }
+  function saveBriefCache(data) {
+    try { localStorage.setItem(BRIEF_CACHE_KEY, JSON.stringify({ date: briefTodayStr(), data })); } catch (_) {}
+  }
+  // 进页入口：有当日缓存直接展示，无缓存自动生成
+  function renderBriefEntry() {
+    const cached = getBriefCache();
+    if (cached) {
+      briefData = cached;
+      renderBriefResult();
+      document.getElementById('briefGenBtn').hidden = true;
+      document.getElementById('briefRegenBtn').hidden = false;
+    } else {
+      generateBrief();
+    }
+  }
+
+  // ---- X 字符数计算（URL 算 23，CJK/emoji 权重 2，其余 1）----
+  function xCharCount(text) {
+    if (!text) return 0;
+    const urls = text.match(/https?:\/\/\S+/g) || [];
+    const rest = text.replace(/https?:\/\/\S+/g, '');
+    let count = 0;
+    for (const ch of rest) {
+      count += /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u3130-\u318F\uA960-\uA97F\uD800-\uDFFF]/.test(ch) ? 2 : 1;
+    }
+    return count + urls.length * 23;
+  }
+
+  // ---- UTM 链接替换（追踪日推带来的流量）----
+  function applyUtm(text, platform) {
+    if (!text) return text;
+    return text.replace(/https:\/\/yingxinxian\.pages\.dev\/?/g,
+      `https://yingxinxian.pages.dev/?utm_source=${platform}&utm_medium=daily_brief`);
+  }
+
+  window.generateBrief = async function(force = false) {
     const btn = document.getElementById('briefGenBtn');
     const body = document.getElementById('briefBody');
+    // 非强制时优先用当日缓存
+    if (!force) {
+      const cached = getBriefCache();
+      if (cached) {
+        briefData = cached;
+        renderBriefResult();
+        btn.hidden = true;
+        document.getElementById('briefRegenBtn').hidden = false;
+        return;
+      }
+    }
     btn.textContent = '生成中…';
     btn.disabled = true;
     body.innerHTML = '<div class="brief-loading"><span class="brief-spinner"></span>AI 正在为你撰写专属简报…</div>';
@@ -1483,12 +1545,14 @@
       const profile = buildUserProfile(favs);
       const profileText = profileToText(profile) || '暂无明显偏好，推荐当下热门内容';
 
-      // 2. 从 NEWS 筛选近期条目（最近3天 + 即将上线），按画像评分
+      // 2. 素材池：近 7 天 + 未来 30 天条目，画像评分 + 新鲜度 + 即将上线加成
       const today = new Date(); today.setHours(0, 0, 0, 0);
-      const recentCut = today.getTime() - 3 * 86400000;
+      const recentCut = today.getTime() - 7 * 86400000;
+      const futureCut = today.getTime() + 30 * 86400000;
       const candidates = NEWS.filter(n => {
         const ts = parseDateTs(n.date);
-        return ts === 0 || ts >= recentCut; // 未来条目 + 近3天；无效日期也保留（兜底）
+        if (ts === 0) return true; // 日期无效兜底保留
+        return ts >= recentCut && ts <= futureCut;
       });
       const scored = candidates.map(n => {
         let s = 0;
@@ -1498,12 +1562,22 @@
         // 时间新鲜度加成：越近分越高
         const ts = parseDateTs(n.date);
         if (ts > 0) s += Math.max(0, 6 - Math.round((today.getTime() - ts) / 86400000));
+        // 即将上线预告加成（定档速览是站点核心价值）
+        if (n.event === 'schedule') s += 3;
         return { n, s };
       }).sort((a, b) => b.s - a.s);
-      const topItems = scored.slice(0, 5).map(x => x.n);
+      // 多样性约束：每类型最多 2 条，取 Top 5
+      const typeCount = {};
+      const topItems = [];
+      for (const { n } of scored) {
+        if (topItems.length >= 5) break;
+        typeCount[n.type] = (typeCount[n.type] || 0) + 1;
+        if (typeCount[n.type] > 2) continue;
+        topItems.push(n);
+      }
       if (topItems.length === 0) throw new Error('暂无近期影讯数据');
 
-      // 3. 并行拉取票房大盘 + 热点影讯
+      // 3. 并行拉取票房大盘（Top3）+ 热点影讯
       const [boxRes, newsRes] = await Promise.allSettled([
         fetch('/api/maoyan').then(r => r.ok ? r.json() : null),
         fetch('/api/huanqiu?t=' + Date.now(), { cache: 'no-cache' }).then(r => r.ok ? r.json() : null)
@@ -1512,8 +1586,7 @@
       if (boxRes.status === 'fulfilled' && boxRes.value && boxRes.value.code === 0 && boxRes.value.movies?.length) {
         boxOffice = {
           total: boxRes.value.totalBoxDesc,
-          topMovie: boxRes.value.movies[0].name,
-          topBox: boxRes.value.movies[0].boxDesc
+          top: boxRes.value.movies.slice(0, 3).map(m => ({ name: m.name, box: m.boxDesc }))
         };
       }
       let newsTitles = [];
@@ -1541,8 +1614,12 @@
       const data = await r.json();
       if (data.code !== 0) throw new Error(data.message || '生成失败');
 
-      // 5. 渲染结果
+      // 5. UTM 链接注入 + 缓存 + 渲染
+      data.data.x = applyUtm(data.data.x, 'x');
+      data.data.weibo = applyUtm(data.data.weibo, 'weibo');
+      data.data.xiaohongshu = applyUtm(data.data.xiaohongshu, 'xiaohongshu');
       briefData = { items: topItems, ...data.data };
+      saveBriefCache(briefData);
       renderBriefResult();
     } catch (e) {
       document.getElementById('briefBody').innerHTML =
@@ -1550,8 +1627,10 @@
     } finally {
       btn.textContent = '生成今日简报';
       btn.disabled = false;
-      const regen = document.getElementById('briefRegenBtn');
-      if (regen && briefData) regen.hidden = false;
+      if (briefData) {
+        btn.hidden = true;
+        document.getElementById('briefRegenBtn').hidden = false;
+      }
     }
   };
 
@@ -1581,6 +1660,7 @@
           <button class="brief-tab" data-p="xiaohongshu">小红书</button>
         </div>
         <textarea class="brief-text" id="briefText" rows="10" spellcheck="false"></textarea>
+        <div class="brief-count" id="briefCount"></div>
         <div class="brief-btns">
           <button class="brief-copy-btn" onclick="copyBriefText()">📋 一键复制</button>
           <button class="brief-publish-btn" onclick="publishBrief()">🚀 去发布</button>
@@ -1591,7 +1671,21 @@
     body.querySelectorAll('.brief-tab').forEach(tab => {
       tab.addEventListener('click', () => setBriefPlatform(tab.dataset.p));
     });
+    // X 版实时字数校验
+    const ta = document.getElementById('briefText');
+    ta.addEventListener('input', updateBriefCount);
     setBriefPlatform('x');
+  }
+
+  // X 版字符数实时显示（>280 标红）
+  function updateBriefCount() {
+    const countEl = document.getElementById('briefCount');
+    const ta = document.getElementById('briefText');
+    if (!countEl || !ta) return;
+    if (briefPlatform !== 'x') { countEl.textContent = ''; return; }
+    const n = xCharCount(ta.value);
+    countEl.textContent = `${n} / 280 字符`;
+    countEl.classList.toggle('over', n > 280);
   }
 
   function setBriefPlatform(p) {
@@ -1606,6 +1700,7 @@
         : p === 'weibo' ? '点击「去发布」将打开微博分享页并自动填入文案'
         : '小红书暂不支持网页直发，请复制文案后到 App 发布';
     }
+    updateBriefCount();
   }
 
   window.copyBriefText = async function() {

@@ -44,8 +44,12 @@ export async function onRequestPost(context) {
       parts.push(`${i + 1}. ${it.title}（${it.eventName || it.event || ''}，${it.date || ''}）${it.summary || ''}`);
     });
     if (boxOffice && boxOffice.total) {
-      const top = boxOffice.topMovie ? `，${boxOffice.topMovie}${boxOffice.topBox ? ' ' + boxOffice.topBox : ''}领跑` : '';
-      parts.push(`【票房大盘】今日大盘 ${boxOffice.total}${top}`);
+      let boxLine = `【票房大盘】今日大盘 ${boxOffice.total}`;
+      if (Array.isArray(boxOffice.top) && boxOffice.top.length > 0) {
+        const tops = boxOffice.top.map(m => `${m.name} ${m.box || ''}`).filter(Boolean).join('、');
+        boxLine += `，票房前三：${tops}`;
+      }
+      parts.push(boxLine);
     }
     if (Array.isArray(news) && news.length > 0) {
       parts.push('【今日热点影讯】');
