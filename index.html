@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=new18">
+<link rel="stylesheet" href="styles.css?v=new20">
 </head>
 <body>
 
@@ -55,6 +55,7 @@
     <a class="nav-item optional" data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
     <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
     <a class="nav-item rec-nav" data-view="recommend" id="recNav">✨ <span class="rec-label">推荐</span></a>
+    <a class="nav-item brief-nav" data-view="brief" id="briefNav">📮 <span class="brief-label">日推</span></a>
     <a class="nav-item fav-nav" data-view="favorites" id="favNav">★ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
@@ -181,6 +182,19 @@
     <h1 class="tl-title">为你推荐 ✨</h1>
     <p class="rec-subtitle" id="recSubtitle">基于你的收藏偏好生成</p>
     <div class="rec-grid" id="recGrid"></div>
+  </div>
+</main>
+
+<!-- 影讯日推视图 -->
+<main id="briefView" hidden>
+  <div class="tl-page">
+    <h1 class="tl-title">影讯日推 📮</h1>
+    <p class="rec-subtitle" id="briefSubtitle">基于你的收藏与浏览偏好，生成专属每日影讯简报</p>
+    <div class="brief-actions">
+      <button class="brief-generate-btn" id="briefGenBtn" onclick="generateBrief()">生成今日简报</button>
+      <button class="brief-regen-btn" id="briefRegenBtn" onclick="generateBrief()" hidden>🔄 换一版</button>
+    </div>
+    <div class="brief-body" id="briefBody"></div>
   </div>
 </main>
 
@@ -828,18 +842,22 @@
   function goView(view, type, title) {
     currentView = view;
     // home 和 favorites 视图不需要 currentType，保持空字符串以匹配导航 active 条件
-    currentType = (view === 'home' || view === 'favorites' || view === 'recommend') ? '' : (type || 'all');
+    currentType = (view === 'home' || view === 'favorites' || view === 'recommend' || view === 'brief') ? '' : (type || 'all');
+    // 埋点：记录分类浏览偏好（日推画像用）
+    trackTypeView(type);
     // 只有明确传了 title 才消费性定位，其他入口不设置
     pendingScrollTitle = title || null;
     document.getElementById('homeView').hidden = view !== 'home';
     document.getElementById('favView').hidden = view !== 'favorites';
     document.getElementById('recView').hidden = view !== 'recommend';
+    document.getElementById('briefView').hidden = view !== 'brief';
     document.getElementById('tlView').hidden = view !== 'timeline';
 
     // 视图切换过渡动画（淡入 + 上移）
     const showEl = view === 'home' ? document.getElementById('homeView')
       : view === 'favorites' ? document.getElementById('favView')
       : view === 'recommend' ? document.getElementById('recView')
+      : view === 'brief' ? document.getElementById('briefView')
       : document.getElementById('tlView');
     showEl.classList.remove('view-enter');
     void showEl.offsetWidth; // 强制重排以重启动画
@@ -1119,8 +1137,33 @@
     }
   }
 
+  // ============ 浏览偏好埋点：记录分类访问 + 卡片点击（日推画像用） ============
+  const BROWSE_KEY = 'yingxinxian_browse';
+  function getBrowseData() {
+    try { return JSON.parse(localStorage.getItem(BROWSE_KEY) || '{"typeFreq":{},"cards":[]}'); } catch (_) { return { typeFreq: {}, cards: [] }; }
+  }
+  function saveBrowseData(d) {
+    try { localStorage.setItem(BROWSE_KEY, JSON.stringify(d)); } catch (_) {}
+  }
+  function trackTypeView(type) {
+    if (!type || type === 'all') return;
+    const d = getBrowseData();
+    d.typeFreq[type] = (d.typeFreq[type] || 0) + 1;
+    saveBrowseData(d);
+  }
+  function trackCardView(title, type) {
+    if (!title) return;
+    const d = getBrowseData();
+    d.cards.push({ title, type, ts: Date.now() });
+    if (d.cards.length > 50) d.cards = d.cards.slice(-50); // 只保留最近50条
+    saveBrowseData(d);
+  }
+
   window.toggleCard = function (card) {
     card.querySelector('.detail').classList.toggle('open');
+    // 埋点：展开卡片视为一次有效浏览
+    const item = card.closest('.tl-item');
+    if (item) trackCardView(item.dataset.title || '', item.dataset.type || '');
   };
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
@@ -1216,6 +1259,67 @@
     return (text || '').split(/[\s,，。、；;：:！!？?《》""''（）()【】\[\]\n\r]+/).filter(w => w.length >= 2);
   }
 
+  // 构建用户画像（收藏强信号 + 浏览弱信号），renderRecommend 和 renderBrief 共用
+  function buildUserProfile(favs) {
+    const favIds = new Set(favs.map(f => { ensureItemId(f); return f.id; }));
+    const typeFreq = {};    // type -> 加权频次
+    const genreFreq = {};   // 流派 -> 频次
+    const keywordFreq = {}; // 关键词 -> 加权频次
+    const langFreq = { '华语': 0, '外语': 0 };
+
+    // 收藏：强信号，权重 1
+    favs.forEach(f => {
+      if (f.type) typeFreq[f.type] = (typeFreq[f.type] || 0) + 1;
+      extractGenres(f.detail?.cast).forEach(g => genreFreq[g] = (genreFreq[g] || 0) + 1);
+      const ep = f.detail?.ep || '';
+      if (ep.includes('华语')) langFreq['华语']++;
+      if (ep.includes('外语') || ep.includes('海外')) langFreq['外语']++;
+      extractKeywords(f.summary).forEach(w => keywordFreq[w] = (keywordFreq[w] || 0) + 1);
+    });
+
+    // 浏览：弱信号，权重 0.3
+    const browse = getBrowseData();
+    Object.entries(browse.typeFreq || {}).forEach(([t, c]) => {
+      typeFreq[t] = (typeFreq[t] || 0) + c * 0.3;
+    });
+    (browse.cards || []).forEach(c => {
+      if (c.type) typeFreq[c.type] = (typeFreq[c.type] || 0) + 0.3;
+      // 浏览过的片名作为关键词信号
+      extractKeywords(c.title).forEach(w => keywordFreq[w] = (keywordFreq[w] || 0) + 0.5);
+    });
+
+    // 只保留出现>=2次的关键词（共同主题），取频次最高的20个
+    const topKeywords = Object.entries(keywordFreq)
+      .filter(([_, c]) => c >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([w]) => w);
+    const keywordSet = new Set(topKeywords);
+    const maxTypeFreq = Math.max(...Object.values(typeFreq), 1);
+    const favByType = {};
+    favs.forEach(f => { if (!favByType[f.type]) favByType[f.type] = f; });
+
+    return { favIds, typeFreq, genreFreq, keywordSet, langFreq, maxTypeFreq, favByType };
+  }
+
+  // 把画像转成一句自然语言描述（传给 AI 做个性化生成用）
+  function profileToText(profile) {
+    if (!profile) return '';
+    const parts = [];
+    const typeNames = Object.entries(profile.typeFreq)
+      .sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([t]) => TYPE_MAP[t]?.name || t)
+      .filter(Boolean);
+    if (typeNames.length) parts.push(`偏爱${typeNames.join('、')}类内容`);
+    const genres = Object.entries(profile.genreFreq)
+      .sort((a, b) => b[1] - a[1]).slice(0, 4)
+      .map(([g]) => g);
+    if (genres.length) parts.push(`常看${genres.join('/')}题材`);
+    if (profile.langFreq['华语'] > profile.langFreq['外语']) parts.push('偏好华语内容');
+    else if (profile.langFreq['外语'] > 0) parts.push('偏好外语内容');
+    return parts.join('，');
+  }
+
   async function renderRecommend() {
     const favs = await getFavoritesData();
     const container = document.getElementById('recGrid');
@@ -1227,37 +1331,8 @@
       return;
     }
 
-    // ===== 1. 构建用户偏好画像 =====
-    const favIds = new Set(favs.map(f => { ensureItemId(f); return f.id; }));
-    const typeFreq = {};    // type -> 出现次数
-    const genreFreq = {};   // 流派 -> 出现次数
-    const keywordFreq = {}; // 关键词 -> 出现次数
-    const langFreq = { '华语': 0, '外语': 0 };
-
-    favs.forEach(f => {
-      if (f.type) typeFreq[f.type] = (typeFreq[f.type] || 0) + 1;
-      extractGenres(f.detail?.cast).forEach(g => genreFreq[g] = (genreFreq[g] || 0) + 1);
-      const ep = f.detail?.ep || '';
-      if (ep.includes('华语')) langFreq['华语']++;
-      if (ep.includes('外语') || ep.includes('海外')) langFreq['外语']++;
-      extractKeywords(f.summary).forEach(w => keywordFreq[w] = (keywordFreq[w] || 0) + 1);
-    });
-
-    // 只保留出现>=2次的关键词（共同主题），取频次最高的20个
-    const topKeywords = Object.entries(keywordFreq)
-      .filter(([_, c]) => c >= 2)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20)
-      .map(([w]) => w);
-    const keywordSet = new Set(topKeywords);
-
-    const maxTypeFreq = Math.max(...Object.values(typeFreq), 1);
-
-    // 找一个匹配的收藏片名用于推荐理由
-    const favByType = {};
-    favs.forEach(f => {
-      if (!favByType[f.type]) favByType[f.type] = f;
-    });
+    // ===== 1. 构建用户偏好画像（收藏+浏览） =====
+    const { favIds, typeFreq, genreFreq, keywordSet, langFreq, maxTypeFreq, favByType } = buildUserProfile(favs);
 
     // ===== 2. 对 NEWS 中未收藏的 item 评分 =====
     const scored = NEWS.map(item => {
@@ -1391,6 +1466,178 @@
       });
     });
   }
+
+  // ============ 影讯日推：生成专属简报 + 一键分发 ============
+  let briefData = null;        // { items, x, weibo, xiaohongshu }
+  let briefPlatform = 'x';     // 当前平台 Tab: x / weibo / xiaohongshu
+
+  window.generateBrief = async function() {
+    const btn = document.getElementById('briefGenBtn');
+    const body = document.getElementById('briefBody');
+    btn.textContent = '生成中…';
+    btn.disabled = true;
+    body.innerHTML = '<div class="brief-loading"><span class="brief-spinner"></span>AI 正在为你撰写专属简报…</div>';
+    try {
+      // 1. 用户画像（收藏强信号 + 浏览弱信号，无收藏也可用浏览画像）
+      const favs = await getFavoritesData();
+      const profile = buildUserProfile(favs);
+      const profileText = profileToText(profile) || '暂无明显偏好，推荐当下热门内容';
+
+      // 2. 从 NEWS 筛选近期条目（最近3天 + 即将上线），按画像评分
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const recentCut = today.getTime() - 3 * 86400000;
+      const candidates = NEWS.filter(n => {
+        const ts = parseDateTs(n.date);
+        return ts === 0 || ts >= recentCut; // 未来条目 + 近3天；无效日期也保留（兜底）
+      });
+      const scored = candidates.map(n => {
+        let s = 0;
+        if (profile.typeFreq[n.type]) s += 10 * (profile.typeFreq[n.type] / profile.maxTypeFreq);
+        s += 5 * extractGenres(n.detail?.cast).filter(g => profile.genreFreq[g]).length;
+        s += 2 * extractKeywords(n.summary).filter(w => profile.keywordSet.has(w)).length;
+        // 时间新鲜度加成：越近分越高
+        const ts = parseDateTs(n.date);
+        if (ts > 0) s += Math.max(0, 6 - Math.round((today.getTime() - ts) / 86400000));
+        return { n, s };
+      }).sort((a, b) => b.s - a.s);
+      const topItems = scored.slice(0, 5).map(x => x.n);
+      if (topItems.length === 0) throw new Error('暂无近期影讯数据');
+
+      // 3. 并行拉取票房大盘 + 热点影讯
+      const [boxRes, newsRes] = await Promise.allSettled([
+        fetch('/api/maoyan').then(r => r.ok ? r.json() : null),
+        fetch('/api/huanqiu?t=' + Date.now(), { cache: 'no-cache' }).then(r => r.ok ? r.json() : null)
+      ]);
+      let boxOffice = null;
+      if (boxRes.status === 'fulfilled' && boxRes.value && boxRes.value.code === 0 && boxRes.value.movies?.length) {
+        boxOffice = {
+          total: boxRes.value.totalBoxDesc,
+          topMovie: boxRes.value.movies[0].name,
+          topBox: boxRes.value.movies[0].boxDesc
+        };
+      }
+      let newsTitles = [];
+      if (newsRes.status === 'fulfilled' && newsRes.value && Array.isArray(newsRes.value.news)) {
+        newsTitles = newsRes.value.news.slice(0, 3).map(n => n.title);
+      }
+
+      // 4. 调 AI 生成三平台文案
+      const r = await fetch('/api/daily-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: topItems.map(n => ({
+            title: cleanBannerTitle(n.title),
+            summary: oneLineSummary(n.summary),
+            type: n.type,
+            date: n.date,
+            eventName: EVENT_NAME[n.event] || n.event
+          })),
+          boxOffice,
+          news: newsTitles,
+          profile: profileText
+        })
+      });
+      const data = await r.json();
+      if (data.code !== 0) throw new Error(data.message || '生成失败');
+
+      // 5. 渲染结果
+      briefData = { items: topItems, ...data.data };
+      renderBriefResult();
+    } catch (e) {
+      document.getElementById('briefBody').innerHTML =
+        `<div class="empty-tip">生成失败：${e.message || e}，稍后再试 📮</div>`;
+    } finally {
+      btn.textContent = '生成今日简报';
+      btn.disabled = false;
+      const regen = document.getElementById('briefRegenBtn');
+      if (regen && briefData) regen.hidden = false;
+    }
+  };
+
+  function renderBriefResult() {
+    const body = document.getElementById('briefBody');
+    const t = TYPE_MAP;
+    body.innerHTML = `
+      <div class="brief-section">
+        <h3 class="brief-section-title">📋 为你精选的今日条目</h3>
+        <div class="brief-items">
+          ${briefData.items.map(n => {
+            const tt = t[n.type] || { name: '其他', color: '#999' };
+            return `
+            <div class="brief-item">
+              <span class="brief-item-tag" style="background:${tt.color}">${tt.name}</span>
+              <span class="brief-item-title">${cleanBannerTitle(n.title)}</span>
+              <span class="brief-item-event">${EVENT_NAME[n.event] || ''}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="brief-section">
+        <h3 class="brief-section-title">✍️ 平台文案（可编辑后复制）</h3>
+        <div class="brief-tabs">
+          <button class="brief-tab active" data-p="x">𝕏</button>
+          <button class="brief-tab" data-p="weibo">微博</button>
+          <button class="brief-tab" data-p="xiaohongshu">小红书</button>
+        </div>
+        <textarea class="brief-text" id="briefText" rows="10" spellcheck="false"></textarea>
+        <div class="brief-btns">
+          <button class="brief-copy-btn" onclick="copyBriefText()">📋 一键复制</button>
+          <button class="brief-publish-btn" onclick="publishBrief()">🚀 去发布</button>
+        </div>
+        <p class="brief-hint" id="briefHint"></p>
+      </div>`;
+    // Tab 切换
+    body.querySelectorAll('.brief-tab').forEach(tab => {
+      tab.addEventListener('click', () => setBriefPlatform(tab.dataset.p));
+    });
+    setBriefPlatform('x');
+  }
+
+  function setBriefPlatform(p) {
+    briefPlatform = p;
+    document.querySelectorAll('.brief-tab').forEach(tab =>
+      tab.classList.toggle('active', tab.dataset.p === p));
+    const ta = document.getElementById('briefText');
+    if (ta && briefData) ta.value = briefData[p] || '';
+    const hint = document.getElementById('briefHint');
+    if (hint) {
+      hint.textContent = p === 'x' ? '点击「去发布」将打开 X 并自动填入文案'
+        : p === 'weibo' ? '点击「去发布」将打开微博分享页并自动填入文案'
+        : '小红书暂不支持网页直发，请复制文案后到 App 发布';
+    }
+  }
+
+  window.copyBriefText = async function() {
+    const ta = document.getElementById('briefText');
+    const text = ta ? ta.value : '';
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      // 降级方案
+      ta.select();
+      document.execCommand('copy');
+    }
+    const hint = document.getElementById('briefHint');
+    if (hint) hint.textContent = '✅ 文案已复制到剪贴板';
+  };
+
+  window.publishBrief = function() {
+    const ta = document.getElementById('briefText');
+    const text = ta ? ta.value.trim() : '';
+    if (!text) return;
+    if (briefPlatform === 'x') {
+      window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text), '_blank');
+    } else if (briefPlatform === 'weibo') {
+      window.open('https://service.weibo.com/share/share.php?title=' + encodeURIComponent(text), '_blank');
+    } else {
+      // 小红书：复制 + 提示
+      copyBriefText();
+      const hint = document.getElementById('briefHint');
+      if (hint) hint.textContent = '✅ 已复制！请打开小红书 App 粘贴发布';
+    }
+  };
 
   function renderCatGroups() {
     const order = ['movie', 'drama', 'show', 'anime', 'duan', 'doc'];
