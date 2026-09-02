@@ -2,8 +2,6 @@
   "name": "yingxinxian",
   "private": true,
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.53",
-    "ai": "^7.0.85",
     "openai": "^4.77.0"
   }
 }
