@@ -25,3 +25,9 @@ $RECYCLE.BIN/
 *.temp
 node_modules/
 .wrangler/
+
+# 本地密钥与开发临时文件
+.dev.vars
+smoke-*.mjs
+.agents/
+skills-lock.json

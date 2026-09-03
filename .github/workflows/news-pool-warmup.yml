@@ -1,0 +1,19 @@
+# 每 6 小时预热一次新闻池（拉取环球影讯 + 国际 RSS，写入 CDN 缓存）
+# 推文生成本身由用户浏览器端按 6h 桶触发（携带个人偏好），cron 只负责让新闻池随时就绪
+name: news-pool-warmup
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # UTC 每 6 小时整点
+  workflow_dispatch: {}     # 支持手动触发
+
+jobs:
+  warmup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warm news pool
+        run: |
+          code=$(curl -s -o /tmp/pool.json -w "%{http_code}" --max-time 60 "https://yingxinxian.pages.dev/api/news-pool")
+          echo "HTTP $code"
+          cat /tmp/pool.json | head -c 500
+          if [ "$code" != "200" ]; then exit 1; fi

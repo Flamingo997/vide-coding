@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=new18">
+<link rel="stylesheet" href="styles.css?v=new19">
 </head>
 <body>
 
@@ -55,6 +55,7 @@
     <a class="nav-item optional" data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
     <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
     <a class="nav-item rec-nav" data-view="recommend" id="recNav">✨ <span class="rec-label">推荐</span></a>
+    <a class="nav-item tweet-nav" data-view="tweet" id="tweetNav">📮 <span class="tweet-label">推文</span></a>
     <a class="nav-item fav-nav" data-view="favorites" id="favNav">★ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
@@ -181,6 +182,26 @@
     <h1 class="tl-title">为你推荐 ✨</h1>
     <p class="rec-subtitle" id="recSubtitle">基于你的收藏偏好生成</p>
     <div class="rec-grid" id="recGrid"></div>
+  </div>
+</main>
+
+<!-- 影讯推文视图 -->
+<main id="tweetView" hidden>
+  <div class="tl-page">
+    <h1 class="tl-title">影讯推文 📮</h1>
+    <p class="rec-subtitle" id="tweetSubtitle">从 24h 新闻池中按你的兴趣筛选，生成 3 条备选推文</p>
+
+    <div class="tweet-actions">
+      <button class="tweet-generate-btn" id="tweetGenBtn" onclick="generateTweets()">生成备选推文</button>
+      <button class="tweet-regen-btn" id="tweetRegenBtn" onclick="generateTweets(true)" hidden>换一批</button>
+    </div>
+
+    <div class="tweet-loading" id="tweetLoading" hidden>
+      <div class="tweet-spinner"></div>
+      <p>正在扫描 24h 新闻池并生成推文…</p>
+    </div>
+
+    <div id="tweetBody"></div>
   </div>
 </main>
 
@@ -828,18 +849,20 @@
   function goView(view, type, title) {
     currentView = view;
     // home 和 favorites 视图不需要 currentType，保持空字符串以匹配导航 active 条件
-    currentType = (view === 'home' || view === 'favorites' || view === 'recommend') ? '' : (type || 'all');
+    currentType = (view === 'home' || view === 'favorites' || view === 'recommend' || view === 'tweet') ? '' : (type || 'all');
     // 只有明确传了 title 才消费性定位，其他入口不设置
     pendingScrollTitle = title || null;
     document.getElementById('homeView').hidden = view !== 'home';
     document.getElementById('favView').hidden = view !== 'favorites';
     document.getElementById('recView').hidden = view !== 'recommend';
+    document.getElementById('tweetView').hidden = view !== 'tweet';
     document.getElementById('tlView').hidden = view !== 'timeline';
 
     // 视图切换过渡动画（淡入 + 上移）
     const showEl = view === 'home' ? document.getElementById('homeView')
       : view === 'favorites' ? document.getElementById('favView')
       : view === 'recommend' ? document.getElementById('recView')
+      : view === 'tweet' ? document.getElementById('tweetView')
       : document.getElementById('tlView');
     showEl.classList.remove('view-enter');
     void showEl.offsetWidth; // 强制重排以重启动画
@@ -869,6 +892,11 @@
     if (view === 'recommend') {
       renderRecommend();
     }
+    if (view === 'tweet') {
+      renderTweetEntry();
+    }
+    // 浏览偏好追踪：记录用户查看的分类（推文画像用）
+    if (view === 'timeline' && (type || 'all') !== 'all') trackTypeView(type);
   }
 
   document.querySelectorAll('.nav-item, .more-menu a, .brand').forEach(el => {
@@ -1121,6 +1149,12 @@
 
   window.toggleCard = function (card) {
     card.querySelector('.detail').classList.toggle('open');
+    // 浏览偏好追踪：记录展开查看的卡片（推文画像用）
+    const item = card.closest('.tl-item');
+    if (item && item.dataset.title) {
+      const tag = card.querySelector('.tag-solid');
+      trackCardView(item.dataset.title, tag ? tag.textContent.replace('日期异常', '').trim() : '');
+    }
   };
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
@@ -1215,6 +1249,246 @@
   function extractKeywords(text) {
     return (text || '').split(/[\s,，。、；;：:！!？?《》""''（）()【】\[\]\n\r]+/).filter(w => w.length >= 2);
   }
+
+  // ============================================================
+  // ============ 影讯推文：浏览追踪 + 画像 + 生成 + 渲染 ============
+  // ============================================================
+  const BROWSE_KEY = 'yingxinxian_browse';
+  const TWEET_CACHE_KEY = 'yingxinxian_tweet_cache';
+  const TWEET_BUCKET_MS = 6 * 3600 * 1000; // 6 小时一个生成桶（每天4次）
+
+  function getBrowseData() {
+    try { return JSON.parse(localStorage.getItem(BROWSE_KEY) || '{"typeFreq":{},"cards":[]}') || {}; }
+    catch (_) { return { typeFreq: {}, cards: [] }; }
+  }
+  function saveBrowseData(d) {
+    try { localStorage.setItem(BROWSE_KEY, JSON.stringify(d)); } catch (_) {}
+  }
+  // 记录分类浏览
+  function trackTypeView(type) {
+    if (!type) return;
+    const d = getBrowseData();
+    d.typeFreq = d.typeFreq || {};
+    d.typeFreq[type] = (d.typeFreq[type] || 0) + 1;
+    saveBrowseData(d);
+  }
+  // 记录卡片展开查看
+  function trackCardView(title, typeName) {
+    if (!title) return;
+    const d = getBrowseData();
+    d.cards = d.cards || [];
+    d.cards.unshift({ title, type: typeName || '', ts: Date.now() });
+    d.cards = d.cards.slice(0, 50); // 最多记 50 张
+    saveBrowseData(d);
+  }
+
+  // 构建推文生成用的用户画像（收藏强信号 + 浏览弱信号）
+  async function buildTweetProfile() {
+    const favs = await getFavoritesData();
+    const browse = getBrowseData();
+
+    const genreFreq = {};   // 流派词（科幻/动作/悬疑…）
+    const keywordFreq = {}; // 标题/简介关键词
+    const typeNames = [];   // 类型中文名
+
+    // 收藏：强信号
+    for (const f of favs) {
+      extractGenres(f.detail?.cast).forEach(g => genreFreq[g] = (genreFreq[g] || 0) + 2);
+      extractKeywords(f.summary).forEach(w => keywordFreq[w] = (keywordFreq[w] || 0) + 1);
+      extractKeywords((f.title || '').replace(/[《》]/g, '')).forEach(w => keywordFreq[w] = (keywordFreq[w] || 0) + 1);
+      if (f.type && TYPE_MAP[f.type]?.name) typeNames.push(TYPE_MAP[f.type].name);
+    }
+    // 浏览：弱信号
+    for (const [t, c] of Object.entries(browse.typeFreq || {})) {
+      if (TYPE_MAP[t]?.name) typeNames.push(TYPE_MAP[t].name);
+      void c;
+    }
+    for (const c of (browse.cards || []).slice(0, 20)) {
+      extractKeywords((c.title || '').replace(/[《》]/g, '')).forEach(w => keywordFreq[w] = (keywordFreq[w] || 0) + 0.3);
+      if (c.type) typeNames.push(c.type);
+    }
+
+    // 汇总关键词：流派优先，其次高频词，类目名兜底
+    const kwScore = { ...genreFreq, ...keywordFreq };
+    const typeFreq2 = {};
+    typeNames.forEach(n => typeFreq2[n] = (typeFreq2[n] || 0) + 1);
+
+    const profileKeywords = [
+      ...Object.entries(kwScore).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([w]) => w),
+      ...Object.entries(typeFreq2).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([w]) => w),
+    ].filter(w => w && w.length >= 2 && w.length <= 12).slice(0, 24);
+
+    // 自然语言画像
+    let profileText = '';
+    const parts = [];
+    const topTypes = Object.entries(typeFreq2).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([w]) => w);
+    const topGenres = Object.entries(genreFreq).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([w]) => w);
+    const topKws = Object.entries(kwScore).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([w]) => w);
+    if (topTypes.length) parts.push('常看' + topTypes.join('、'));
+    if (topGenres.length) parts.push('偏爱' + topGenres.join('/') + '题材');
+    if (topKws.length) parts.push('关注关键词：' + topKws.slice(0, 8).join('、'));
+    if (parts.length) profileText = '该用户' + parts.join('；') + '。';
+
+    return { profileText, profileKeywords, favCount: favs.length };
+  }
+
+  // X 字符计数：CJK/emoji 按 2，URL 按 23，其余按 1
+  function xCharCount(text) {
+    const t = String(text || '');
+    let n = 0;
+    for (const p of t.split(/(https?:\/\/\S+)/g)) {
+      if (/^https?:\/\//.test(p)) { n += 23; continue; }
+      for (const ch of p) {
+        const cp = ch.codePointAt(0);
+        if ((cp >= 0x2E80 && cp <= 0x9FFF) || (cp >= 0x3000 && cp <= 0x303F) ||
+            (cp >= 0xFF00 && cp <= 0xFFEF) || (cp >= 0xF900 && cp <= 0xFAFF) ||
+            (cp >= 0x20000 && cp <= 0x3FFFF) || (cp >= 0x1F300 && cp <= 0x1FAFF) ||
+            (cp >= 0x2600 && cp <= 0x27BF)) n += 2;
+        else n += 1;
+      }
+    }
+    return n;
+  }
+
+  // 6 小时桶缓存
+  function tweetBucket() { return Math.floor(Date.now() / TWEET_BUCKET_MS); }
+  function getTweetCache() {
+    try {
+      const c = JSON.parse(localStorage.getItem(TWEET_CACHE_KEY) || 'null');
+      if (c && c.bucket === tweetBucket()) return c;
+    } catch (_) {}
+    return null;
+  }
+  function saveTweetCache(data) {
+    try {
+      localStorage.setItem(TWEET_CACHE_KEY, JSON.stringify({ bucket: tweetBucket(), ...data }));
+    } catch (_) {}
+  }
+
+  // goView 钩子：有缓存直接展示，无缓存自动生成
+  function renderTweetEntry() {
+    const cached = getTweetCache();
+    if (cached && cached.tweets) {
+      renderTweetResult(cached);
+    } else {
+      generateTweets();
+    }
+  }
+
+  // 生成备选推文（force=true 跳过缓存重新生成）
+  window.generateTweets = async function (force = false) {
+    const body = document.getElementById('tweetBody');
+    const loading = document.getElementById('tweetLoading');
+    const genBtn = document.getElementById('tweetGenBtn');
+    const regenBtn = document.getElementById('tweetRegenBtn');
+    const subtitle = document.getElementById('tweetSubtitle');
+
+    if (!force) {
+      const cached = getTweetCache();
+      if (cached && cached.tweets) { renderTweetResult(cached); return; }
+    }
+
+    loading.hidden = false;
+    body.innerHTML = '';
+    genBtn.disabled = true;
+    regenBtn.hidden = true;
+
+    try {
+      const profile = await buildTweetProfile();
+      const r = await fetch('/api/news-tweet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profileText: profile.profileText,
+          profileKeywords: profile.profileKeywords,
+        }),
+      });
+      const data = await r.json();
+      if (data.code !== 0 || !data.tweets?.length) {
+        throw new Error(data.message || '生成失败');
+      }
+      saveTweetCache(data);
+      renderTweetResult(data);
+    } catch (e) {
+      body.innerHTML = `<div class="empty-tip">生成失败：${e.message || '未知错误'}，稍后重试</div>`;
+      subtitle.textContent = '可点击按钮重新生成';
+    } finally {
+      loading.hidden = true;
+      genBtn.disabled = false;
+      regenBtn.hidden = false;
+    }
+  };
+
+  // 渲染备选推文结果
+  function renderTweetResult(data) {
+    const body = document.getElementById('tweetBody');
+    const subtitle = document.getElementById('tweetSubtitle');
+    const regenBtn = document.getElementById('tweetRegenBtn');
+    regenBtn.hidden = false;
+
+    const poolInfo = data.poolTotal
+      ? `${data.poolWindowHours || 24}h 新闻池 ${data.poolTotal} 条（${Object.entries(data.poolStats || {}).map(([s, n]) => `${s} ${n}`).join(' / ')}）`
+      : '';
+    subtitle.textContent = poolInfo || '已生成';
+
+    const html = [];
+
+    // 备选推文卡片
+    html.push('<div class="tweet-list">');
+    data.tweets.forEach((t, i) => {
+      const count = t.charCount || xCharCount(t.text);
+      const over = count > 280;
+      html.push(`
+        <div class="tweet-card">
+          <div class="tweet-card-head">
+            <span class="tweet-card-no">备选 ${i + 1}</span>
+            <span class="tweet-count ${over ? 'over' : ''}">${count} / 280</span>
+          </div>
+          <pre class="tweet-text">${t.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>
+          <div class="tweet-btns">
+            <button class="tweet-copy-btn" onclick="copyTweetText(${i}, this)">复制文案</button>
+            <a class="tweet-open-btn" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(t.text)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">去 X 发布</a>
+          </div>
+        </div>`);
+    });
+    html.push('</div>');
+
+    // 素材来源（可折叠）
+    if (data.material?.length) {
+      html.push('<details class="tweet-material">');
+      html.push(`<summary>本次素材（${data.material.length} 条，按你的兴趣匹配）</summary>`);
+      html.push('<div class="tweet-material-list">');
+      data.material.forEach(m => {
+        html.push(`<a class="tweet-material-item" href="${m.url}" target="_blank" rel="noopener">[${m.source}] ${m.title}</a>`);
+      });
+      html.push('</div></details>');
+    }
+
+    body.innerHTML = html.join('');
+    // 暂存文案供复制
+    window.__tweetTexts = data.tweets.map(t => t.text);
+  }
+
+  // 复制推文文案
+  window.copyTweetText = async function (i, btn) {
+    const text = (window.__tweetTexts || [])[i] || '';
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    if (btn) {
+      const old = btn.textContent;
+      btn.textContent = '✓ 已复制';
+      setTimeout(() => { btn.textContent = old; }, 1500);
+    }
+  };
+  // ============ 影讯推文 END ============
 
   async function renderRecommend() {
     const favs = await getFavoritesData();
