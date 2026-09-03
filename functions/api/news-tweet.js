@@ -159,22 +159,27 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
     } catch (e1) {
       if (env.CF_ACCOUNT_ID && env.CF_AI_TOKEN) {
         // 降级通道：Workers AI OpenAI 兼容端点（同网络）
-        const cf = new OpenAI({
-          baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
-          apiKey: env.CF_AI_TOKEN,
-          timeout: 45000,
-          maxRetries: 1,
-        });
-        const completion = await cf.chat.completions.create({
-          model: '@cf/qwen/qwen3.8-27b', // 免费额度内可用的中文旗舰模型
-          messages,
-          stream: false,
-          temperature: 0.9,
-        });
-        raw = completion.choices?.[0]?.message?.content || '';
-        channel = 'workers-ai';
+        try {
+          const cf = new OpenAI({
+            baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
+            apiKey: env.CF_AI_TOKEN,
+            timeout: 45000,
+            maxRetries: 1,
+          });
+          const completion = await cf.chat.completions.create({
+            model: '@cf/qwen/qwen3.8-27b', // 免费额度内可用的中文旗舰模型
+            messages,
+            stream: false,
+            temperature: 0.9,
+          });
+          raw = completion.choices?.[0]?.message?.content || '';
+          channel = 'workers-ai';
+        } catch (e2) {
+          throw new Error('DeepSeek超时,降级通道(Workers AI)也失败: ' + (e2.message || String(e2)));
+        }
       } else {
-        throw e1; // 未配置降级通道，只能抛 DeepSeek 的错误
+        // 诊断：明确告知降级通道环境变量不可见
+        throw new Error('DeepSeek超时,且降级通道环境变量(CF_ACCOUNT_ID/CF_AI_TOKEN)未生效——请检查Pages环境变量配置(需Production环境)');
       }
     }
 
