@@ -134,8 +134,8 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
     const openai = new OpenAI({
       baseURL: 'https://api.deepseek.com',
       apiKey: apiKey,
-      timeout: 30000,   // 单次 30s 超时（Workers 出口到 DeepSeek 跨境偶发挂起）
-      maxRetries: 2,    // SDK 自动重试（连接错误/408/429/5xx）
+      timeout: 15000,   // 15s 快速掐断（跨境连接要么秒通要么完全挂，长等无意义）
+      maxRetries: 3,    // 4 次尝试，每次换连接更容易撞上通的出口
     });
 
     const completion = await openai.chat.completions.create({
