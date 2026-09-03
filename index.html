@@ -1392,6 +1392,8 @@
     body.innerHTML = '';
     genBtn.disabled = true;
     regenBtn.hidden = true;
+    subtitle.textContent = '正在扫描新闻池…';
+    setTimeout(() => { if (!loading.hidden) loading.querySelector('p').textContent = '正在让 AI 撰写备选推文（跨境调用可能较慢）…'; }, 3000);
 
     try {
       const profile = await buildTweetProfile();
@@ -1402,6 +1404,7 @@
           profileText: profile.profileText,
           profileKeywords: profile.profileKeywords,
         }),
+        signal: AbortSignal.timeout(120000), // 兜底：2 分钟必出结果
       });
       const data = await r.json();
       if (data.code !== 0 || !data.tweets?.length) {
@@ -1410,8 +1413,17 @@
       saveTweetCache(data);
       renderTweetResult(data);
     } catch (e) {
-      body.innerHTML = `<div class="empty-tip">生成失败：${e.message || '未知错误'}，稍后重试</div>`;
-      subtitle.textContent = '可点击按钮重新生成';
+      // 失败兜底：显示上一次的旧结果（若有），避免空手而归
+      const old = (() => {
+        try { return JSON.parse(localStorage.getItem(TWEET_CACHE_KEY) || 'null'); } catch (_) { return null; }
+      })();
+      if (old && old.tweets) {
+        renderTweetResult(old);
+        subtitle.textContent = '本次生成失败（' + (e.message || '超时') + '），已显示上次结果，可点「换一批」重试';
+      } else {
+        body.innerHTML = `<div class="empty-tip">生成失败：${e.message || '未知错误'}，稍后重试</div>`;
+        subtitle.textContent = '可点击按钮重新生成';
+      }
     } finally {
       loading.hidden = true;
       genBtn.disabled = false;

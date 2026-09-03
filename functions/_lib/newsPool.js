@@ -63,6 +63,7 @@ async function fetchHuanqiu() {
     Array.from({ length: HUANQIU_PAGES }, (_, i) =>
       fetch(`${HUANQIU_API}&offset=${i * 24}&limit=24`, {
         headers: BROWSER_HEADERS,
+        signal: AbortSignal.timeout(15000), // 单页 15s 超时，防跨境挂起
         cf: { cacheTtl: 600, cacheEverything: true },
       })
         .then(r => (r.ok ? r.json() : null))
@@ -138,6 +139,7 @@ async function fetchRss() {
     RSS_SOURCES.map(s =>
       fetch(s.url, {
         headers: { 'User-Agent': UA, 'Accept': 'application/rss+xml, application/xml, text/xml, */*' },
+        signal: AbortSignal.timeout(15000), // 单源 15s 超时，防挂起
         cf: { cacheTtl: 1800, cacheEverything: true },
       })
         .then(r => (r.ok ? r.text() : ''))
