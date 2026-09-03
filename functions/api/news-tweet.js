@@ -131,24 +131,53 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
 
 请生成 3 条备选推文。`;
 
-    const openai = new OpenAI({
-      baseURL: 'https://api.deepseek.com',
-      apiKey: apiKey,
-      timeout: 15000,   // 15s 快速掐断（跨境连接要么秒通要么完全挂，长等无意义）
-      maxRetries: 3,    // 4 次尝试，每次换连接更容易撞上通的出口
-    });
+    const messages = [
+      { role: 'system', content: NEWS_TWEET_SYSTEM },
+      { role: 'user', content: userPrompt },
+    ];
 
-    const completion = await openai.chat.completions.create({
-      model: 'deepseek-v4-flash',
-      messages: [
-        { role: 'system', content: NEWS_TWEET_SYSTEM },
-        { role: 'user', content: userPrompt },
-      ],
-      stream: false,
-      temperature: 0.9, // 推文需要创意
-    });
+    // ===== 双通道 LLM：DeepSeek 直连 → 失败自动降级 Cloudflare Workers AI =====
+    // 根因：Workers 出口到 api.deepseek.com 跨境连接分时段完全挂死（TCP 层不通，重试无解）
+    // Workers AI 与 Pages 同网络，零跨境，永不受此影响
+    let raw = '';
+    let channel = '';
+    try {
+      const openai = new OpenAI({
+        baseURL: 'https://api.deepseek.com',
+        apiKey: apiKey,
+        timeout: 12000,  // 快断：挂起时 12s 掐掉（连接要么秒通要么完全挂）
+        maxRetries: 1,   // 2 次尝试，24s 内决定是否降级
+      });
+      const completion = await openai.chat.completions.create({
+        model: 'deepseek-v4-flash',
+        messages,
+        stream: false,
+        temperature: 0.9, // 推文需要创意
+      });
+      raw = completion.choices?.[0]?.message?.content || '';
+      channel = 'deepseek';
+    } catch (e1) {
+      if (env.CF_ACCOUNT_ID && env.CF_AI_TOKEN) {
+        // 降级通道：Workers AI OpenAI 兼容端点（同网络）
+        const cf = new OpenAI({
+          baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
+          apiKey: env.CF_AI_TOKEN,
+          timeout: 45000,
+          maxRetries: 1,
+        });
+        const completion = await cf.chat.completions.create({
+          model: '@cf/qwen/qwen3.8-27b', // 免费额度内可用的中文旗舰模型
+          messages,
+          stream: false,
+          temperature: 0.9,
+        });
+        raw = completion.choices?.[0]?.message?.content || '';
+        channel = 'workers-ai';
+      } else {
+        throw e1; // 未配置降级通道，只能抛 DeepSeek 的错误
+      }
+    }
 
-    const raw = completion.choices?.[0]?.message?.content || '';
     let tweets = parseTweets(raw);
 
     // 解析失败兜底：整体当一条
@@ -169,6 +198,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
       poolTotal: poolResult.total,
       poolStats: poolResult.stats,
       poolWindowHours: poolResult.windowHours || 24,
+      channel,
       generatedAt: Date.now(),
     });
   } catch (e) {
