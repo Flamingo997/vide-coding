@@ -87,7 +87,7 @@ function parseTweets(raw) {
   return tweets;
 }
 
-// 诊断端点：报告函数运行时可见的环境变量（仅名称与前几位，不泄露完整值）
+// 诊断端点：报告函数运行时可见的环境变量（仅名称与前几位，不泄露完整值）+ Workers AI 自检实测延迟
 export async function onRequestGet({ env }) {
   const names = Object.keys(env).filter(k => !k.startsWith('__'));
   const preview = {};
@@ -96,7 +96,33 @@ export async function onRequestGet({ env }) {
     if (typeof v === 'string' && v.length > 0) preview[k] = v.slice(0, 6) + '...';
     else preview[k] = typeof v; // object = binding
   }
-  return new Response(JSON.stringify({ code: 0, vars: names, preview }, null, 2), {
+  // Workers AI 自检：最小 prompt 实测各模型延迟
+  let aiTest = {};
+  if (env.CF_ACCOUNT_ID && env.CF_AI_TOKEN) {
+    for (const model of ['@cf/qwen/qwen3-30b-a3b-fp8', '@cf/qwen/qwen3.8-27b']) {
+      const t0 = Date.now();
+      try {
+        const cf = new OpenAI({
+          baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
+          apiKey: env.CF_AI_TOKEN,
+          timeout: 30000,
+          maxRetries: 0,
+        });
+        const r = await cf.chat.completions.create({
+          model,
+          messages: [{ role: 'user', content: '只回复两个字母:OK' }],
+          stream: false,
+          max_tokens: 10,
+        });
+        aiTest[model] = 'ok ' + (Date.now() - t0) + 'ms, reply=' + JSON.stringify((r.choices?.[0]?.message?.content || '').slice(0, 20));
+      } catch (e) {
+        aiTest[model] = 'FAIL ' + (Date.now() - t0) + 'ms: ' + (e.message || String(e));
+      }
+    }
+  } else {
+    aiTest = 'env missing';
+  }
+  return new Response(JSON.stringify({ code: 0, vars: names, preview, aiTest }, null, 2), {
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
   });
 }
@@ -177,11 +203,11 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
           const cf = new OpenAI({
             baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
             apiKey: env.CF_AI_TOKEN,
-            timeout: 45000,
-            maxRetries: 1,
+            timeout: 90000,   // 生成3条推文较慢,给足时间
+            maxRetries: 0,    // 不重试,失败快速报错
           });
           const completion = await cf.chat.completions.create({
-            model: '@cf/qwen/qwen3.8-27b', // 免费额度内可用的中文旗舰模型
+            model: '@cf/qwen/qwen3-30b-a3b-fp8', // MoE 30B-A3B: 中文强且推理快(比稠密27B快数倍)
             messages,
             stream: false,
             temperature: 0.9,
