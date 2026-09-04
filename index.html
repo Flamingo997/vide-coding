@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=new19">
+<link rel="stylesheet" href="styles.css?v=new20">
 </head>
 <body>
 
@@ -1393,7 +1393,7 @@
     genBtn.disabled = true;
     regenBtn.hidden = true;
     subtitle.textContent = '正在扫描新闻池…';
-    setTimeout(() => { if (!loading.hidden) loading.querySelector('p').textContent = '正在让 AI 撰写备选推文（跨境调用可能较慢）…'; }, 3000);
+    setTimeout(() => { if (!loading.hidden) loading.querySelector('p').textContent = 'AI 正在阅读新闻原文（约 1-2 分钟）…'; }, 3000);
 
     try {
       const profile = await buildTweetProfile();
@@ -1404,7 +1404,7 @@
           profileText: profile.profileText,
           profileKeywords: profile.profileKeywords,
         }),
-        signal: AbortSignal.timeout(120000), // 兜底：2 分钟必出结果
+        signal: AbortSignal.timeout(180000), // 兜底：3 分钟必出结果（Agent 读原文较慢）
       });
       const data = await r.json();
       if (data.code !== 0 || !data.tweets?.length) {
@@ -1441,7 +1441,8 @@
     const poolInfo = data.poolTotal
       ? `${data.poolWindowHours || 24}h 新闻池 ${data.poolTotal} 条（${Object.entries(data.poolStats || {}).map(([s, n]) => `${s} ${n}`).join(' / ')}）`
       : '';
-    subtitle.textContent = poolInfo || '已生成';
+    const readInfo = data.articlesRead?.length ? ` · 已读 ${data.articlesRead.length} 篇原文` : '';
+    subtitle.textContent = (poolInfo || '已生成') + readInfo;
 
     const html = [];
 
@@ -1450,13 +1451,16 @@
     data.tweets.forEach((t, i) => {
       const count = t.charCount || xCharCount(t.text);
       const over = count > 280;
+      const angleTag = t.angle ? `<span class="tweet-angle">${t.angle}</span>` : '';
+      const srcTag = t.sourceTitle ? `<div class="tweet-src">基于原文：${t.sourceTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>` : '';
       html.push(`
         <div class="tweet-card">
           <div class="tweet-card-head">
-            <span class="tweet-card-no">备选 ${i + 1}</span>
+            <span class="tweet-card-no">备选 ${i + 1}${angleTag}</span>
             <span class="tweet-count ${over ? 'over' : ''}">${count} / 280</span>
           </div>
           <pre class="tweet-text">${t.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>
+          ${srcTag}
           <div class="tweet-btns">
             <button class="tweet-copy-btn" onclick="copyTweetText(${i}, this)">复制文案</button>
             <a class="tweet-open-btn" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(t.text)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">去 X 发布</a>
