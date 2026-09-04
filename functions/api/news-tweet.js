@@ -22,6 +22,18 @@ const SOURCE_WEIGHT = {
   'IndieWire': 0.8,
 };
 
+// 清理推文中任何形式夹带的 yingxinxian UTM 链接（整行 / 行内），保证用户看到的推文不带跳转
+function stripPromoLinks(text) {
+  let s = String(text || '');
+  // 1) 删整行独立的 yingxinxian URL（前后可带空白）
+  s = s.replace(/^[ \t]*https?:\/\/yingxinxian\.pages\.dev[^\n]*[ \t]*\n?/gm, '');
+  // 2) 删行内夹带的 yingxinxian URL（URL 尾部可能带标点，剥到 URL 合法边界）
+  s = s.replace(/https?:\/\/yingxinxian\.pages\.dev[^ \t\r\n"'`<>]*/g, '');
+  // 3) 收尾：空白+尾随标点整理
+  s = s.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+  return s;
+}
+
 function jsonResponse(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -97,14 +109,12 @@ function parseArticles(raw, fallbackMaterial5) {
       tweets: [ts1, ts2].filter(Boolean).map(text => ({ text, angle: '' })).slice(0, 2),
     });
   }
-  // 若某篇 tweets 不足 2 条，补空壳兜底 + 用原摘要当速报推文占位
+  // 若某篇 tweets 不足 2 条，补空壳兜底 + 用原摘要当速报推文占位（不带推广链接）
   out.forEach((o, i) => {
     const src = fallbackMaterial5[i] || {};
     while (o.tweets.length < 2) {
-      o.tweets.push({
-        text: o.summary ? `【${src.title || '影讯'}】${o.summary.slice(0, 80)}…\n${SITE_URL}` : SITE_URL,
-        angle: '',
-      });
+      const place = o.summary ? `【${src.title || '影讯'}】${o.summary.slice(0, 100)}…` : '（推文待生成，点击换一批重试）';
+      o.tweets.push({ text: place, angle: '' });
     }
   });
   return out;
@@ -195,15 +205,16 @@ async function runAgent({ model, prompt, env, material, totalMs, stepMs, maxRetr
   if (!articles || articles.length < 5) {
     throw new Error('Agent 未通过 submitArticles 提交 5 篇完整结果（实际' + (articles?.length ?? 0) + '）');
   }
-  // 补齐到正好 5 条（Agent 若提交 <5 则用候选列表兜底）
+  // 补齐到正好 5 条（Agent 若提交 <5 则用候选列表兜底）—— 占位推文不带推广链接
   while (articles.length < 5 && material.length > articles.length) {
     const src = material[articles.length];
+    const brief = src.summary && src.summary.length > 40 ? src.summary.slice(0, 120) + '…' : (src.summary || src.title || '');
     articles.push({
       articleTitle: src.title, articleUrl: src.url,
       summary: src.summary || src.title || '',
       tweets: [
-        { text: (src.summary || src.title || '') + `\n${SITE_URL}`, angle: '速报' },
-        { text: SITE_URL, angle: '观点' },
+        { text: brief || '（速报占位，换一批重试）', angle: '速报' },
+        { text: brief ? `关于《${src.title}》，你最关注哪一点？#影讯` : '（观点占位，换一批重试）', angle: '观点' },
       ],
     });
   }
@@ -332,20 +343,20 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
     }
     const okMap = new Map(articlesRead.map(a => [a.url, a.ok === true]));
 
-    // 规范化：补齐 site link + charCount，然后并行抓 5 篇正文放进响应（用于前端直接展开显示）
+    // 规范化：剥离所有推广链接 + 重新算 charCount，然后并行抓 5 篇正文放进响应（用于前端直接展开显示）
     const finalArticles = articles.slice(0, 5).map((a, i) => {
       const url = a.articleUrl || mat5[i]?.url || '';
       const title = a.articleTitle || mat5[i]?.title || '';
       const meta = material.find(m => m.url === url) || mat5[i] || {};
       const tweets = (a.tweets || []).slice(0, 2).map(t => {
-        const text = (t.text || '').includes('yingxinxian.pages.dev') ? (t.text || '') : `${t.text || ''}\n${SITE_URL}`;
+        const cleaned = stripPromoLinks(t.text);
         return {
-          text,
-          charCount: xCharCount(text),
+          text: cleaned || '（暂无推文内容，点换一批重试）',
+          charCount: xCharCount(cleaned),
           angle: t.angle || '',
         };
       });
-      while (tweets.length < 2) tweets.push({ text: SITE_URL, charCount: xCharCount(SITE_URL), angle: '' });
+      while (tweets.length < 2) tweets.push({ text: '（推文待生成，点换一批重试）', charCount: 0, angle: '' });
       return {
         title,
         url,
