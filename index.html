@@ -1365,10 +1365,10 @@
     } catch (_) {}
   }
 
-  // goView 钩子：有缓存直接展示，无缓存自动生成
+  // goView 钩子：有新格式缓存直接展示，否则自动生成（旧格式抛弃，强制重生）
   function renderTweetEntry() {
     const cached = getTweetCache();
-    if (cached && cached.tweets) {
+    if (cached && Array.isArray(cached.articles) && cached.articles.length) {
       renderTweetResult(cached);
     } else {
       generateTweets();
@@ -1385,7 +1385,8 @@
 
     if (!force) {
       const cached = getTweetCache();
-      if (cached && cached.tweets) { renderTweetResult(cached); return; }
+      // 只认新格式（articles[]），老格式缓存（只有 tweets[]）抛弃 → 强制走重生
+      if (cached && Array.isArray(cached.articles) && cached.articles.length) { renderTweetResult(cached); return; }
     }
 
     loading.hidden = false;
@@ -1407,17 +1408,17 @@
         signal: AbortSignal.timeout(180000), // 兜底：3 分钟必出结果（Agent 读原文较慢）
       });
       const data = await r.json();
-      if (data.code !== 0 || !data.tweets?.length) {
+      if (data.code !== 0 || !data.articles?.length) {
         throw new Error(data.message || '生成失败');
       }
       saveTweetCache(data);
       renderTweetResult(data);
     } catch (e) {
-      // 失败兜底：显示上一次的旧结果（若有），避免空手而归
+      // 失败兜底：显示上一次的新格式结果（若有），避免空手而归
       const old = (() => {
         try { return JSON.parse(localStorage.getItem(TWEET_CACHE_KEY) || 'null'); } catch (_) { return null; }
       })();
-      if (old && old.tweets) {
+      if (old && Array.isArray(old.articles) && old.articles.length) {
         renderTweetResult(old);
         subtitle.textContent = '本次生成失败（' + (e.message || '超时') + '），已显示上次结果，可点「换一批」重试';
       } else {
@@ -1439,7 +1440,10 @@
     regenBtn.hidden = false;
 
     const arts = Array.isArray(data.articles) ? data.articles.slice(0, 5) : [];
-    const totalTweetChars = arts.reduce((s, a) => s + (a.tweets || []).reduce((ss, t) => ss + (t.charCount || 0), 0), 0);
+    if (!arts.length) {
+      body.innerHTML = `<div class="empty-tip">暂无有效数据，请点「换一批」重新生成</div>`;
+      return;
+    }
     const readN = arts.filter(a => a.ok === true).length;
     const poolInfo = data.poolTotal
       ? `${data.poolWindowHours || 24}h 新闻池 ${data.poolTotal} 条（${Object.entries(data.poolStats || {}).map(([s, n]) => `${s} ${n}`).join(' / ')}）`
