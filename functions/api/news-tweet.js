@@ -87,6 +87,20 @@ function parseTweets(raw) {
   return tweets;
 }
 
+// 诊断端点：报告函数运行时可见的环境变量（仅名称与前几位，不泄露完整值）
+export async function onRequestGet({ env }) {
+  const names = Object.keys(env).filter(k => !k.startsWith('__'));
+  const preview = {};
+  for (const k of names) {
+    const v = env[k];
+    if (typeof v === 'string' && v.length > 0) preview[k] = v.slice(0, 6) + '...';
+    else preview[k] = typeof v; // object = binding
+  }
+  return new Response(JSON.stringify({ code: 0, vars: names, preview }, null, 2), {
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+  });
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
 
