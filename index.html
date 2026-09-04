@@ -1452,7 +1452,16 @@
       const count = t.charCount || xCharCount(t.text);
       const over = count > 280;
       const angleTag = t.angle ? `<span class="tweet-angle">${t.angle}</span>` : '';
-      const srcTag = t.sourceTitle ? `<div class="tweet-src">基于原文：${t.sourceTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>` : '';
+      // 溯源按钮：可点击查看当时读的原文（sourceUrl 缺失时按标题在素材里找）
+      let srcUrl = t.sourceUrl || '';
+      if (!srcUrl && t.sourceTitle) {
+        const hit = (data.material || []).find(m => m.title === t.sourceTitle)
+          || (data.articlesRead || []).find(a => a.title === t.sourceTitle);
+        srcUrl = hit?.url || '';
+      }
+      const srcTag = t.sourceTitle
+        ? `<button class="tweet-src-btn" ${srcUrl ? `onclick="viewArticle(${i}, 'tweet')"` : 'disabled'}>📖 基于原文：${t.sourceTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</button>`
+        : '';
       html.push(`
         <div class="tweet-card">
           <div class="tweet-card-head">
@@ -1469,21 +1478,80 @@
     });
     html.push('</div>');
 
-    // 素材来源（可折叠）
+    // 素材来源（可折叠，Agent 实际读过的带「已读」标记 + 原文按钮）
     if (data.material?.length) {
+      const readMap = new Map((data.articlesRead || []).map(a => [a.url, a]));
       html.push('<details class="tweet-material">');
-      html.push(`<summary>本次素材（${data.material.length} 条，按你的兴趣匹配）</summary>`);
+      const readCount = (data.articlesRead || []).length;
+      html.push(`<summary>本次素材（${data.material.length} 条候选 · AI 实际阅读 ${readCount} 篇原文）</summary>`);
       html.push('<div class="tweet-material-list">');
-      data.material.forEach(m => {
-        html.push(`<a class="tweet-material-item" href="${m.url}" target="_blank" rel="noopener">[${m.source}] ${m.title}</a>`);
+      data.material.forEach((m, i) => {
+        const read = readMap.get(m.url);
+        const badge = read
+          ? `<span class="mat-read-badge ${read.ok === false ? 'fallback' : ''}">${read.ok === false ? '已读·摘要' : '已读原文'}</span>`
+          : '';
+        html.push(`<div class="tweet-material-item">[${m.source}] ${m.title.replace(/&/g, '&amp;').replace(/</g, '&lt;')}${badge}<button class="mat-view-btn" onclick="viewArticle(${i}, 'material')">原文</button><a class="mat-open-link" href="${m.url}" target="_blank" rel="noopener">源站↗</a></div>`);
       });
       html.push('</div></details>');
     }
 
     body.innerHTML = html.join('');
-    // 暂存文案供复制
+    // 暂存文案供复制 + 溯源URL供原文查看
     window.__tweetTexts = data.tweets.map(t => t.text);
+    window.__tweetSrcUrls = data.tweets.map(t => t.sourceUrl || (t.sourceTitle ? ((data.material || []).find(m => m.title === t.sourceTitle) || (data.articlesRead || []).find(a => a.title === t.sourceTitle))?.url || '' : ''));
+    window.__materialUrls = (data.material || []).map(m => m.url);
   }
+
+  // 查看文章原文（溯源弹窗）
+  window.viewArticle = async function (i, type) {
+    const url = type === 'material'
+      ? (window.__materialUrls || [])[i]
+      : (window.__tweetSrcUrls || [])[i];
+    if (!url) return;
+
+    // 弹窗骨架（懒创建）
+    let overlay = document.getElementById('articleOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'articleOverlay';
+      overlay.className = 'article-overlay';
+      overlay.innerHTML = `
+        <div class="article-modal">
+          <div class="article-modal-head">
+            <span class="article-modal-title" id="articleTitle">加载中…</span>
+            <button class="article-modal-close" id="articleClose">✕</button>
+          </div>
+          <pre class="article-modal-body" id="articleBody">正在获取原文…</pre>
+          <div class="article-modal-foot">
+            <span class="article-modal-status" id="articleStatus"></span>
+            <a class="article-modal-open" id="articleOpen" href="#" target="_blank" rel="noopener">在源站打开 ↗</a>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.hidden = true; });
+      document.getElementById('articleClose').addEventListener('click', () => { overlay.hidden = true; });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') overlay.hidden = true; });
+    }
+    overlay.hidden = false;
+    document.getElementById('articleTitle').textContent = '加载中…';
+    document.getElementById('articleBody').textContent = '正在获取原文…';
+    document.getElementById('articleStatus').textContent = '';
+    document.getElementById('articleOpen').href = url;
+
+    try {
+      const r = await fetch(`/api/article-text?url=${encodeURIComponent(url)}`);
+      const d = await r.json();
+      if (d.code !== 0) throw new Error(d.message || '获取失败');
+      document.getElementById('articleTitle').textContent = d.title || '（无标题）';
+      document.getElementById('articleBody').textContent = d.text || '（无内容）';
+      document.getElementById('articleStatus').textContent = d.ok ? '✓ 原文抓取成功（Agent 生成时读取的内容）' : '⚠ 当时原文抓取失败，生成基于摘要';
+      document.getElementById('articleStatus').className = 'article-modal-status ' + (d.ok ? 'good' : 'warn');
+    } catch (e) {
+      document.getElementById('articleTitle').textContent = '获取失败';
+      document.getElementById('articleBody').textContent = e.message || '未知错误';
+      document.getElementById('articleStatus').textContent = '';
+    }
+  };
 
   // 复制推文文案
   window.copyTweetText = async function (i, btn) {

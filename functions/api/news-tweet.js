@@ -97,8 +97,9 @@ const tweetsSchema = jsonSchema({
           text: { type: 'string', description: '推文全文（含链接与hashtag）' },
           angle: { type: 'string', description: '角度类型：速报/观点/盘点' },
           sourceTitle: { type: 'string', description: '主要素材的文章标题' },
+          sourceUrl: { type: 'string', description: '主要素材的文章URL（必须来自候选列表）' },
         },
-        required: ['text', 'angle', 'sourceTitle'],
+        required: ['text', 'angle', 'sourceTitle', 'sourceUrl'],
       },
     },
   },
@@ -134,17 +135,22 @@ async function runAgent({ model, prompt, env, material, totalMs, stepMs, maxRetr
 
   const result = await agent.generate({ prompt, timeout: { totalMs, stepMs } });
 
-  // 从 steps 提取 submitTweets 提交结果 + 实际读过的文章（可观测性）
+  // 从 steps 提取 submitTweets 提交结果 + 实际读过的文章（含抓取成功状态，供前端溯源展示）
   let tweets = null;
   const articlesRead = [];
   for (const step of result.steps || []) {
     for (const part of step.content || []) {
-      if (part.type !== 'tool-call') continue;
-      if (part.toolName === 'submitTweets' && Array.isArray(part.input?.tweets)) {
-        tweets = part.input.tweets; // 取最后一次提交
-      } else if (part.toolName === 'fetchArticle' && part.input?.url) {
+      if (part.type === 'tool-call') {
+        if (part.toolName === 'submitTweets' && Array.isArray(part.input?.tweets)) {
+          tweets = part.input.tweets; // 取最后一次提交
+        }
+      } else if (part.type === 'tool-result' && part.toolName === 'fetchArticle' && part.input?.url) {
         const it = material.find(m => m.url === part.input.url);
-        articlesRead.push({ title: it?.title || part.input.url, url: part.input.url });
+        articlesRead.push({
+          title: it?.title || part.output?.title || part.input.url,
+          url: part.input.url,
+          ok: part.output?.ok !== false, // 原文是否真实抓到（false=降级到摘要）
+        });
       }
     }
   }
@@ -280,7 +286,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
       return jsonResponse({ code: 502, message: '推文生成失败: ' + (lastError?.message || '所有通道均失败') }, 200);
     }
 
-    // 规范化：确保每条带站点链接
+    // 规范化：确保每条带站点链接 + 透传溯源字段
     const normTweets = tweets.map(t => {
       const text = t.text.includes('yingxinxian.pages.dev') ? t.text : t.text + '\n' + SITE_URL;
       return {
@@ -288,6 +294,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
         charCount: xCharCount(text),
         angle: t.angle || '',
         sourceTitle: t.sourceTitle || '',
+        sourceUrl: t.sourceUrl || '',
       };
     });
 

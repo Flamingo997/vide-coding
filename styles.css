@@ -952,6 +952,75 @@ body {
   padding: 0 2px; margin: -4px 0 10px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 溯源按钮：点击弹窗查看 Agent 当时读的原文 */
+.tweet-src-btn {
+  display: block; width: 100%; text-align: left;
+  font-size: 12px; color: #1D9BF0;
+  background: #F0F8FF; border: 1px solid #D6EBFA; border-radius: 8px;
+  padding: 6px 10px; margin: -4px 0 10px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background .15s;
+}
+.tweet-src-btn:hover:not(:disabled) { background: #E3F2FD; }
+.tweet-src-btn:disabled { color: var(--gray-3); cursor: default; }
+/* 素材列表：已读标记 + 原文按钮 */
+.tweet-material-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--gray-2);
+  padding: 6px 2px; border-bottom: 1px dashed var(--gray-6);
+}
+.mat-read-badge {
+  flex-shrink: 0; font-size: 11px; font-weight: 600; color: #16A34A;
+  background: #F0FDF4; border: 1px solid #DCFCE7; border-radius: 10px; padding: 1px 8px;
+}
+.mat-read-badge.fallback { color: #D97706; background: #FFFBEB; border-color: #FEF3C7; }
+.mat-view-btn {
+  flex-shrink: 0; margin-left: auto; font-size: 11px; color: #1D9BF0;
+  background: none; border: 1px solid #D6EBFA; border-radius: 10px;
+  padding: 2px 10px; cursor: pointer;
+}
+.mat-view-btn:hover { background: #F0F8FF; }
+.mat-open-link { flex-shrink: 0; font-size: 11px; color: var(--gray-3); text-decoration: none; }
+.mat-open-link:hover { color: #1D9BF0; }
+/* 原文查看弹窗 */
+.article-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.article-overlay[hidden] { display: none; }
+.article-modal {
+  background: #fff; border-radius: 14px; width: min(760px, 100%);
+  max-height: 86vh; display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.article-modal-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--gray-6);
+}
+.article-modal-title {
+  flex: 1; font-size: 15px; font-weight: 600; color: var(--gray-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.article-modal-close {
+  flex-shrink: 0; font-size: 14px; color: var(--gray-3);
+  background: none; border: none; cursor: pointer; padding: 4px 8px;
+}
+.article-modal-close:hover { color: var(--gray-1); }
+.article-modal-body {
+  flex: 1; overflow-y: auto;
+  font-family: inherit; font-size: 14px; line-height: 1.8; color: var(--gray-2);
+  padding: 18px 20px; white-space: pre-wrap; word-break: break-word; margin: 0;
+}
+.article-modal-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 18px; border-top: 1px solid var(--gray-6);
+}
+.article-modal-status { font-size: 12px; color: var(--gray-3); }
+.article-modal-status.good { color: #16A34A; }
+.article-modal-status.warn { color: #D97706; }
+.article-modal-open { font-size: 12px; color: #1D9BF0; text-decoration: none; }
 .tweet-count { font-size: 13px; color: var(--gray-3); font-variant-numeric: tabular-nums; }
 .tweet-count.over { color: #E5484D; font-weight: 600; }
 .tweet-text {
@@ -981,8 +1050,10 @@ body {
   padding: 6px 0; user-select: none;
 }
 .tweet-material summary:hover { color: #1D9BF0; }
+/* 素材列表：已读标记 + 原文按钮 */
 .tweet-material-list { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 4px; }
 .tweet-material-item {
+  display: flex; align-items: center; gap: 8px;
   font-size: 13px; color: var(--gray-2, #555); text-decoration: none;
   line-height: 1.5; padding: 6px 10px; background: #FAFBFC;
   border-radius: 6px; border: 1px solid #F0F3F8;
