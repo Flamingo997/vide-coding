@@ -1448,19 +1448,43 @@
 
     // 备选推文卡片
     html.push('<div class="tweet-list">');
+    const matArr = data.material || [];
+    const artArr = data.articlesRead || [];
+    // 辅助：精确 → 去空格后全等 → 包含 三级标题匹配找URL
+    function findSrcByTitle(title) {
+      if (!title) return null;
+      const t = String(title).trim();
+      if (!t) return null;
+      const pools = [matArr, artArr];
+      for (const p of pools) {
+        let hit = p.find(x => x.title === title);
+        if (hit) return hit;
+        hit = p.find(x => String(x.title || '').trim() === t);
+        if (hit) return hit;
+      }
+      const tLow = t.toLowerCase();
+      for (const p of pools) {
+        const hit = p.find(x => String(x.title || '').toLowerCase().includes(tLow) || tLow.includes(String(x.title || '').toLowerCase()));
+        if (hit) return hit;
+      }
+      return null;
+    }
     data.tweets.forEach((t, i) => {
       const count = t.charCount || xCharCount(t.text);
       const over = count > 280;
       const angleTag = t.angle ? `<span class="tweet-angle">${t.angle}</span>` : '';
-      // 溯源按钮：可点击查看当时读的原文（sourceUrl 缺失时按标题在素材里找）
+      // 溯源按钮：永远有 onclick（不再 disabled）——匹配不上时用 material[i%N] 兜底，至少能打开一篇候选让用户对照
       let srcUrl = t.sourceUrl || '';
       if (!srcUrl && t.sourceTitle) {
-        const hit = (data.material || []).find(m => m.title === t.sourceTitle)
-          || (data.articlesRead || []).find(a => a.title === t.sourceTitle);
+        const hit = findSrcByTitle(t.sourceTitle);
         srcUrl = hit?.url || '';
       }
-      const srcTag = t.sourceTitle
-        ? `<button class="tweet-src-btn" ${srcUrl ? `onclick="viewArticle(${i}, 'tweet')"` : 'disabled'}>📖 基于原文：${t.sourceTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</button>`
+      if (!srcUrl && matArr.length) {
+        srcUrl = matArr[i % matArr.length].url;
+      }
+      const titleDisp = (t.sourceTitle || (srcUrl ? '(未命中文案对应素材，打开候选原文)' : '')).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const srcTag = titleDisp
+        ? `<button class="tweet-src-btn" onclick="viewArticle(${i}, 'tweet')">📖 基于原文：${titleDisp}</button>`
         : '';
       html.push(`
         <div class="tweet-card">
@@ -1495,19 +1519,34 @@
       html.push('</div></details>');
     }
 
-    body.innerHTML = html.join('');
-    // 暂存文案供复制 + 溯源URL供原文查看
-    window.__tweetTexts = data.tweets.map(t => t.text);
-    window.__tweetSrcUrls = data.tweets.map(t => t.sourceUrl || (t.sourceTitle ? ((data.material || []).find(m => m.title === t.sourceTitle) || (data.articlesRead || []).find(a => a.title === t.sourceTitle))?.url || '' : ''));
-    window.__materialUrls = (data.material || []).map(m => m.url);
+    try {
+      body.innerHTML = html.join('');
+      window.__tweetTexts = data.tweets.map(t => t.text);
+      window.__tweetSrcUrls = data.tweets.map((t, i) => {
+        let u = t.sourceUrl || '';
+        if (!u && t.sourceTitle) {
+          const hit = findSrcByTitle(t.sourceTitle);
+          u = hit?.url || '';
+        }
+        if (!u && matArr.length) u = matArr[i % matArr.length].url;
+        return u;
+      });
+      window.__materialUrls = matArr.map(m => m.url);
+    } catch (e) {
+      console.error('[推文渲染失败]', e);
+      body.innerHTML += `<div style="color:#B91C1C;background:#FEF2F2;border:1px solid #FECACA;padding:12px 16px;border-radius:8px;margin:12px 0;font-size:13px">前端渲染异常：${e.message}<br>可打开浏览器控制台查看详细错误，或刷新页面重试。</div>`;
+    }
   }
 
   // 查看文章原文（溯源弹窗）
   window.viewArticle = async function (i, type) {
-    const url = type === 'material'
-      ? (window.__materialUrls || [])[i]
-      : (window.__tweetSrcUrls || [])[i];
-    if (!url) return;
+    const urls = type === 'material' ? (window.__materialUrls || []) : (window.__tweetSrcUrls || []);
+    let url = urls[i] || '';
+    // 兜底：即使数组未初始化/越界，也给一条候选材料（至少能打开原文页）
+    if (!url) {
+      const mats = window.__materialUrls || [];
+      url = mats[i] || mats[i % Math.max(1, mats.length)] || mats[0] || '';
+    }
 
     // 弹窗骨架（懒创建）
     let overlay = document.getElementById('articleOverlay');
@@ -1535,8 +1574,11 @@
     overlay.hidden = false;
     document.getElementById('articleTitle').textContent = '加载中…';
     document.getElementById('articleBody').textContent = '正在获取原文…';
-    document.getElementById('articleStatus').textContent = '';
-    document.getElementById('articleOpen').href = url;
+    document.getElementById('articleStatus').textContent = url ? '' : '⚠️ 未命中文案对应素材，已打开候选原文供对照（非严格匹配）';
+    document.getElementById('articleStatus').className = 'article-modal-status ' + (url ? '' : 'warn');
+    document.getElementById('articleOpen').href = url || '#';
+
+    if (!url) return;
 
     try {
       const r = await fetch(`/api/article-text?url=${encodeURIComponent(url)}`);
