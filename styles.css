@@ -1015,23 +1015,26 @@ body {
 }
 .orig-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
-/* 正文大框：深色代码框风格，仿截图 */
+/* 正文大框：白底黑字，仿报刊正文阅读 */
 .orig-text {
   margin: 0;
-  background: #111827;
-  color: #E5E7EB;
+  background: #FFFFFF;
+  color: #0F172A;
   padding: 22px 22px 22px 22px;
-  font-size: 13px;
-  line-height: 1.72;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Microsoft YaHei Mono", monospace;
+  font-size: 13.5px;
+  line-height: 1.82;
+  font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 440px;
   overflow-y: auto;
   border-radius: 0;
+  border-top: 1px solid #EEF2F7;
+  border-bottom: 1px solid #EEF2F7;
 }
-.orig-text::-webkit-scrollbar { width: 8px; }
-.orig-text::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.45); border-radius: 4px; }
+.orig-text::-webkit-scrollbar { width: 8px; background: transparent; }
+.orig-text::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.55); border-radius: 4px; }
+.orig-text::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.7); }
 
 .orig-summary-block { padding: 14px 20px 18px; }
 .orig-tweets { padding: 4px 20px 20px; }
