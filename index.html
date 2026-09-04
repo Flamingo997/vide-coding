@@ -1431,110 +1431,86 @@
     }
   };
 
-  // 渲染备选推文结果
+  // 渲染备选推文结果：5 个独立区块，每块 = 原文 + 中文摘要 + 2 条推文
   function renderTweetResult(data) {
     const body = document.getElementById('tweetBody');
     const subtitle = document.getElementById('tweetSubtitle');
     const regenBtn = document.getElementById('tweetRegenBtn');
     regenBtn.hidden = false;
 
+    const arts = Array.isArray(data.articles) ? data.articles.slice(0, 5) : [];
+    const totalTweetChars = arts.reduce((s, a) => s + (a.tweets || []).reduce((ss, t) => ss + (t.charCount || 0), 0), 0);
+    const readN = arts.filter(a => a.ok === true).length;
     const poolInfo = data.poolTotal
       ? `${data.poolWindowHours || 24}h 新闻池 ${data.poolTotal} 条（${Object.entries(data.poolStats || {}).map(([s, n]) => `${s} ${n}`).join(' / ')}）`
       : '';
-    const readInfo = data.articlesRead?.length ? ` · 已读 ${data.articlesRead.length} 篇原文` : '';
-    subtitle.textContent = (poolInfo || '已生成') + readInfo;
+    subtitle.textContent = (poolInfo || '已生成') + ` · ${arts.length} 篇原文（已读全文 ${readN}）· ${arts.reduce((n, a) => n + (a.tweets?.length || 0), 0)} 条推文 · 通道：${data.channel || '未知'}`;
+
+    window.__articleTweets = arts.map(a => (a.tweets || []).map(t => t.text));
 
     const html = [];
+    html.push('<div class="orig-blocks">');
 
-    // 备选推文卡片
-    html.push('<div class="tweet-list">');
-    const matArr = data.material || [];
-    const artArr = data.articlesRead || [];
-    // 辅助：精确 → 去空格后全等 → 包含 三级标题匹配找URL
-    function findSrcByTitle(title) {
-      if (!title) return null;
-      const t = String(title).trim();
-      if (!t) return null;
-      const pools = [matArr, artArr];
-      for (const p of pools) {
-        let hit = p.find(x => x.title === title);
-        if (hit) return hit;
-        hit = p.find(x => String(x.title || '').trim() === t);
-        if (hit) return hit;
+    arts.forEach((a, ai) => {
+      const title = String(a.title || `第 ${ai + 1} 篇`).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const summary = String(a.summary || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const source = String(a.source || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const url = a.url || '#';
+      const textRaw = a.text || '';
+      let statusText, statusClass;
+      if (textRaw.startsWith('（原文获取失败')) {
+        statusText = '✕ 正文抓取失败'; statusClass = 'fail';
+      } else if (a.ok === true) {
+        statusText = '✓ 已读全文（Agent 当时读取的内容）'; statusClass = 'good';
+      } else {
+        statusText = '⚠ 基于摘要生成，未读原文'; statusClass = 'warn';
       }
-      const tLow = t.toLowerCase();
-      for (const p of pools) {
-        const hit = p.find(x => String(x.title || '').toLowerCase().includes(tLow) || tLow.includes(String(x.title || '').toLowerCase()));
-        if (hit) return hit;
-      }
-      return null;
-    }
-    data.tweets.forEach((t, i) => {
-      const count = t.charCount || xCharCount(t.text);
-      const over = count > 280;
-      const angleTag = t.angle ? `<span class="tweet-angle">${t.angle}</span>` : '';
-      // 溯源按钮：永远有 onclick（不再 disabled）——匹配不上时用 material[i%N] 兜底，至少能打开一篇候选让用户对照
-      let srcUrl = t.sourceUrl || '';
-      if (!srcUrl && t.sourceTitle) {
-        const hit = findSrcByTitle(t.sourceTitle);
-        srcUrl = hit?.url || '';
-      }
-      if (!srcUrl && matArr.length) {
-        srcUrl = matArr[i % matArr.length].url;
-      }
-      const titleDisp = (t.sourceTitle || (srcUrl ? '(未命中文案对应素材，打开候选原文)' : '')).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-      const srcTag = titleDisp
-        ? `<button class="tweet-src-btn" onclick="viewArticle(${i}, 'tweet')">📖 基于原文：${titleDisp}</button>`
-        : '';
-      html.push(`
-        <div class="tweet-card">
-          <div class="tweet-card-head">
-            <span class="tweet-card-no">备选 ${i + 1}${angleTag}</span>
-            <span class="tweet-count ${over ? 'over' : ''}">${count} / 280</span>
-          </div>
-          <pre class="tweet-text">${t.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>
-          ${srcTag}
-          <div class="tweet-btns">
-            <button class="tweet-copy-btn" onclick="copyTweetText(${i}, this)">复制文案</button>
-            <a class="tweet-open-btn" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(t.text)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">去 X 发布</a>
-          </div>
-        </div>`);
+      const safeText = textRaw.length ? textRaw.replace(/&/g, '&amp;').replace(/</g, '&lt;') : '（无正文内容，可点右侧源站链接查看）';
+
+      html.push(`<section class="orig-block">
+  <div class="orig-head">
+    <div class="orig-title-wrap">
+      <span class="orig-no">原文 ${ai + 1}</span>
+      <span class="orig-src">[${source || '来源不详'}]</span>
+      <h3 class="orig-title">${title}</h3>
+    </div>
+    <div class="orig-actions">
+      <span class="article-modal-status ${statusClass}">${statusText}</span>
+      <a class="mat-open-link" href="${url}" target="_blank" rel="noopener">源站↗</a>
+    </div>
+  </div>
+  <pre class="orig-text">${safeText}</pre>
+  <div class="orig-summary-block">
+    <h4 class="orig-section-title">ⓞ 中文摘要 <span class="orig-sub-note">（基于上方原文）</span></h4>
+    <div class="orig-summary-body">${summary || '（暂无摘要）'}</div>
+  </div>
+  <div class="orig-tweets">
+    <h4 class="orig-section-title">ⓞ 推文备选 <span class="orig-sub-note">（基于上方原文）</span></h4>`);
+
+      (a.tweets || []).slice(0, 2).forEach((t, ti) => {
+        const count = t.charCount || xCharCount(t.text || '');
+        const over = count > 280;
+        const tag = t.angle ? `<span class="tweet-angle">${t.angle}</span>` : '';
+        const safeT = String(t.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        html.push(`<div class="tweet-card orig-tweet">
+  <div class="tweet-card-head">
+    <span class="tweet-card-no">备选推文 ${ti + 1}${tag}</span>
+    <span class="tweet-count ${over ? 'over' : ''}">${count} / 280</span>
+    <button class="tweet-copy-btn" onclick="copyTweetText(${ai}, ${ti}, this)">复制</button>
+  </div>
+  <pre class="tweet-text">${safeT}</pre>
+</div>`);
+      });
+
+      html.push(`</div></section>`);
     });
+
     html.push('</div>');
 
-    // 素材来源（可折叠，Agent 实际读过的带「已读」标记 + 原文按钮）
-    if (data.material?.length) {
-      const readMap = new Map((data.articlesRead || []).map(a => [a.url, a]));
-      html.push('<details open class="tweet-material">');
-      const readCount = (data.articlesRead || []).length;
-      html.push(`<summary>本次素材（${data.material.length} 条候选 · AI 实际阅读 ${readCount} 篇原文）</summary>`);
-      html.push('<div class="tweet-material-list">');
-      data.material.forEach((m, i) => {
-        const read = readMap.get(m.url);
-        const badge = read
-          ? `<span class="mat-read-badge ${read.ok === false ? 'fallback' : ''}">${read.ok === false ? '已读·摘要' : '已读原文'}</span>`
-          : '';
-        html.push(`<div class="tweet-material-item">[${m.source}] ${m.title.replace(/&/g, '&amp;').replace(/</g, '&lt;')}${badge}<button class="mat-view-btn" onclick="viewArticle(${i}, 'material')">原文</button><a class="mat-open-link" href="${m.url}" target="_blank" rel="noopener">源站↗</a></div>`);
-      });
-      html.push('</div></details>');
-    }
-
-    try {
-      body.innerHTML = html.join('');
-      window.__tweetTexts = data.tweets.map(t => t.text);
-      window.__tweetSrcUrls = data.tweets.map((t, i) => {
-        let u = t.sourceUrl || '';
-        if (!u && t.sourceTitle) {
-          const hit = findSrcByTitle(t.sourceTitle);
-          u = hit?.url || '';
-        }
-        if (!u && matArr.length) u = matArr[i % matArr.length].url;
-        return u;
-      });
-      window.__materialUrls = matArr.map(m => m.url);
-    } catch (e) {
+    try { body.innerHTML = html.join(''); }
+    catch (e) {
       console.error('[推文渲染失败]', e);
-      body.innerHTML += `<div style="color:#B91C1C;background:#FEF2F2;border:1px solid #FECACA;padding:12px 16px;border-radius:8px;margin:12px 0;font-size:13px">前端渲染异常：${e.message}<br>可打开浏览器控制台查看详细错误，或刷新页面重试。</div>`;
+      body.innerHTML = `<div style="color:#B91C1C;background:#FEF2F2;border:1px solid #FECACA;padding:12px 16px;border-radius:8px;margin:12px 0;font-size:13px">前端渲染异常：${e.message}<br>可打开控制台查看详情，或刷新重试。</div>` + html.join('');
     }
   }
 
@@ -1595,9 +1571,10 @@
     }
   };
 
-  // 复制推文文案
-  window.copyTweetText = async function (i, btn) {
-    const text = (window.__tweetTexts || [])[i] || '';
+  // 复制推文文案（按文章/推文二维坐标取）
+  window.copyTweetText = async function (ai, ti, btn) {
+    const grid = window.__articleTweets || [];
+    const text = (grid[ai] && grid[ai][ti]) ? grid[ai][ti] : '';
     try {
       await navigator.clipboard.writeText(text);
     } catch (_) {

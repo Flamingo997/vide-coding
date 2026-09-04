@@ -70,40 +70,79 @@ function scoreNews(item, keywords) {
 }
 
 // 旧链路的正则解析（兜底用）
-function parseTweets(raw) {
-  const tweets = [];
-  const re = /===TWEET(\d)===\s*([\s\S]*?)(?====TWEET\d===|$)/g;
-  let m;
-  while ((m = re.exec(raw)) !== null) {
-    const text = m[2].trim();
-    if (text) tweets.push(text);
+function parseArticles(raw, fallbackMaterial5) {
+  // 正则提取 5 个 ART 区块，每个区块含 SUMMARY / TWEET1 / TWEET2
+  const blocks = [];
+  const artRe = /===ART(\d)===\s*([\s\S]*?)(?====ART\d===|$)/gi;
+  let mm;
+  while ((mm = artRe.exec(raw)) !== null) {
+    const body = mm[2];
+    const s = (body.match(/===SUMMARY===\s*([\s\S]*?)(?====TWEET1===|$)/) || [])[1]?.trim() || '';
+    const t1 = (body.match(/===TWEET1===\s*([\s\S]*?)(?====TWEET2===|$)/) || [])[1]?.trim() || '';
+    const t2 = (body.match(/===TWEET2===\s*([\s\S]*?)(?====ART\d===|$)/) || [])[1]?.trim() || '';
+    if (s || t1 || t2) blocks.push({ summary: s, t1, t2 });
   }
-  return tweets;
+  // 不足 5 条：按 fallbackMaterial5 的索引补齐
+  const out = [];
+  for (let i = 0; i < 5; i++) {
+    const src = fallbackMaterial5[i] || {};
+    const b = blocks[i] || {};
+    const summary = b.summary || src.summary || src.title || '';
+    const ts1 = b.t1;
+    const ts2 = b.t2;
+    out.push({
+      articleTitle: src.title || '',
+      articleUrl: src.url || '',
+      summary,
+      tweets: [ts1, ts2].filter(Boolean).map(text => ({ text, angle: '' })).slice(0, 2),
+    });
+  }
+  // 若某篇 tweets 不足 2 条，补空壳兜底 + 用原摘要当速报推文占位
+  out.forEach((o, i) => {
+    const src = fallbackMaterial5[i] || {};
+    while (o.tweets.length < 2) {
+      o.tweets.push({
+        text: o.summary ? `【${src.title || '影讯'}】${o.summary.slice(0, 80)}…\n${SITE_URL}` : SITE_URL,
+        angle: '',
+      });
+    }
+  });
+  return out;
 }
 
 // ===== Agent 生成（AI SDK ToolLoopAgent）=====
 // 结构化输出不用 response_format（DeepSeek 不支持 json_schema 类型），
-// 改用 submitTweets 工具提交——任何支持工具调用的模型通用（含 Workers AI qwen）
-const tweetsSchema = jsonSchema({
+// 改用 submitArticles 工具提交——任何支持工具调用的模型通用（含 Workers AI qwen）
+const articlesSchema = jsonSchema({
   type: 'object',
   properties: {
-    tweets: {
+    articles: {
       type: 'array',
-      minItems: 3,
-      maxItems: 3,
+      minItems: 5,
+      maxItems: 5,
       items: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: '推文全文（含链接与hashtag）' },
-          angle: { type: 'string', description: '角度类型：速报/观点/盘点' },
-          sourceTitle: { type: 'string', description: '主要素材的文章标题' },
-          sourceUrl: { type: 'string', description: '主要素材的文章URL（必须来自候选列表）' },
+          articleTitle: { type: 'string', description: '文章标题，从候选列表中原样复制' },
+          articleUrl: { type: 'string', description: '文章 URL，从候选列表中原样复制，作为生源锚' },
+          summary: { type: 'string', description: '基于原文真实事实写的 100-160 字中文摘要' },
+          tweets: {
+            type: 'array', minItems: 2, maxItems: 2,
+            items: {
+              type: 'object',
+              properties: {
+                text: { type: 'string', description: '推文全文（含链接与hashtag）' },
+                angle: { type: 'string', description: '角度标签：速报|观点|盘点|共鸣，两条必须不同' },
+              },
+              required: ['text', 'angle'],
+            },
+          },
         },
-        required: ['text', 'angle', 'sourceTitle', 'sourceUrl'],
+        required: ['articleTitle', 'articleUrl', 'summary', 'tweets'],
       },
     },
   },
-  required: ['tweets'],
+  required: ['articles'],
 });
 
 async function runAgent({ model, prompt, env, material, totalMs, stepMs, maxRetries }) {
@@ -111,55 +150,64 @@ async function runAgent({ model, prompt, env, material, totalMs, stepMs, maxRetr
     description: '获取新闻文章的完整原文。输入文章URL，返回正文文本（英文原文保持英文，写作时再转述为中文）。',
     inputSchema: jsonSchema({ type: 'object', properties: { url: { type: 'string', description: '候选列表中的文章完整URL' } }, required: ['url'] }),
     execute: async ({ url }) => {
-      // 找到对应池内条目做降级信息（标题+摘要）
       const item = material.find(m => m.url === url) || {};
       const r = await fetchArticleContent(url, env, { title: item.title, summary: item.summary });
       return r;
     },
   });
 
-  const submitTweets = tool({
-    description: '提交最终结果：3 条备选推文。完成原文阅读后必须调用此工具提交，不要直接以文本形式输出推文。',
-    inputSchema: tweetsSchema,
+  const submitArticles = tool({
+    description: '提交最终结果：必须恰好 5 篇文章，每篇包含摘要 + 恰好 2 条推文。完成原文阅读后必须调用此工具提交，禁止以文本形式直接输出推文。',
+    inputSchema: articlesSchema,
     execute: async (input) => ({ received: true }),
   });
 
   const agent = new ToolLoopAgent({
     model,
     instructions: NEWS_TWEET_AGENT_SYSTEM,
-    tools: { fetchArticle: fetchTool, submitTweets },
-    stopWhen: isStepCount(10), // 防失控循环
+    tools: { fetchArticle: fetchTool, submitArticles },
+    stopWhen: isStepCount(12),
     temperature: 0.9,
     maxRetries,
   });
 
   const result = await agent.generate({ prompt, timeout: { totalMs, stepMs } });
 
-  // 从 steps 提取 submitTweets 提交结果 + 实际读过的文章（含抓取成功状态，供前端溯源展示）
-  let tweets = null;
+  let articles = null;
   const articlesRead = [];
   for (const step of result.steps || []) {
     for (const part of step.content || []) {
       if (part.type === 'tool-call') {
-        if (part.toolName === 'submitTweets' && Array.isArray(part.input?.tweets)) {
-          tweets = part.input.tweets; // 取最后一次提交
+        if (part.toolName === 'submitArticles' && Array.isArray(part.input?.articles)) {
+          articles = part.input.articles.slice(0, 5);
         }
       } else if (part.type === 'tool-result' && part.toolName === 'fetchArticle' && part.input?.url) {
         const it = material.find(m => m.url === part.input.url);
         articlesRead.push({
           title: it?.title || part.output?.title || part.input.url,
           url: part.input.url,
-          ok: part.output?.ok !== false, // 原文是否真实抓到（false=降级到摘要）
+          ok: part.output?.ok !== false,
         });
       }
     }
   }
 
-  if (!tweets || !tweets.length) {
-    throw new Error('Agent 未通过 submitTweets 提交有效结果');
+  if (!articles || articles.length < 5) {
+    throw new Error('Agent 未通过 submitArticles 提交 5 篇完整结果（实际' + (articles?.length ?? 0) + '）');
   }
-
-  return { tweets, articlesRead };
+  // 补齐到正好 5 条（Agent 若提交 <5 则用候选列表兜底）
+  while (articles.length < 5 && material.length > articles.length) {
+    const src = material[articles.length];
+    articles.push({
+      articleTitle: src.title, articleUrl: src.url,
+      summary: src.summary || src.title || '',
+      tweets: [
+        { text: (src.summary || src.title || '') + `\n${SITE_URL}`, angle: '速报' },
+        { text: SITE_URL, angle: '观点' },
+      ],
+    });
+  }
+  return { articles, articlesRead };
 }
 
 export async function onRequestPost(context) {
@@ -203,10 +251,16 @@ ${candidatesText}
 【用户兴趣画像】
 ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材）'}
 
-请先用 fetchArticle 工具阅读你认为最值得写的 3-5 篇原文（优先匹配画像，可并行请求），然后调用 submitTweets 工具提交 3 条备选推文。`;
+请按以下严格流程执行：
+1) 从候选列表中选出 5 篇最契合画像 + 最具话题度的新闻（必须恰好 5 篇）
+2) 对每一篇，先调用 fetchArticle 获取其完整原文（可并行请求多篇）
+3) 阅读后，为每一篇产出：
+   · 100-160 字中文摘要（严格基于原文事实，不能凭标题脑补）
+   · 2 条备选推文（速报/观点/共鸣/盘点，两条角度必须不同；≤240字符CJK×2；首句钩子；末尾UTM链接；带hashtag）
+4) 全部完成后，调用 submitArticles 工具一次性提交 5 篇结构化结果。`;
 
-    // DeepSeek provider：经自定义 fetch 注入 thinking:disabled
-    // （v4-flash 是思考模型，长上下文下思考 token 爆炸导致每步 60s+；实测 disabled 后正常）
+    const mat5 = material.slice(0, 5); // 用于 legacy 兜底锚定
+
     const deepseek = createOpenAI({
       baseURL: 'https://api.deepseek.com',
       apiKey,
@@ -217,7 +271,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
             body.thinking = { type: 'disabled' };
             init = { ...init, body: JSON.stringify(body) };
           }
-        } catch (_) { /* 注入失败则按原样发送 */ }
+        } catch (_) {}
         return fetch(url, init);
       },
     });
@@ -229,12 +283,12 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
         })
       : null;
 
-    let tweets = null;
+    let articles = null;
     let articlesRead = [];
     let channel = '';
     let lastError = null;
+    let legacyMode = false; // 决定 ok 默认值（legacy=摘要,Agent=看具体条目）
 
-    // -- 探活预检：4s 小探测决定是否走 DeepSeek Agent（跨境挂死时秒级跳过，不浪费宽 stepMs）
     let deepseekAlive = false;
     try {
       await generateText({
@@ -246,76 +300,89 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
       deepseekAlive = true;
     } catch (_) { deepseekAlive = false; }
 
-    // -- 通道1: DeepSeek Agent（探活通过才跑，宽超时）
     if (deepseekAlive) {
       try {
         const r = await runAgent({
-          model: deepseek.chat('deepseek-v4-flash'), // .chat()=Chat Completions(DeepSeek无Responses API)
+          model: deepseek.chat('deepseek-v4-flash'),
           prompt: agentPrompt, env, material,
-          totalMs: 100000, stepMs: 45000, maxRetries: 1,
+          totalMs: 110000, stepMs: 50000, maxRetries: 1,
         });
-        tweets = r.tweets; articlesRead = r.articlesRead; channel = 'deepseek-agent';
-      } catch (e1) {
-        lastError = e1;
-      }
+        articles = r.articles; articlesRead = r.articlesRead; channel = 'deepseek-agent';
+      } catch (e1) { lastError = e1; }
     } else {
       lastError = new Error('DeepSeek 探活失败（跨境不通）');
     }
 
-    // -- 通道2: Workers AI Agent（同网络零跨境；qwen3-30b-a3b 支持工具调用）
-    if (!tweets && cf) {
+    if (!articles && cf) {
       try {
         const r = await runAgent({
-          model: cf.chat('@cf/qwen/qwen3-30b-a3b-fp8'), // .chat()=OpenAI兼容端点
+          model: cf.chat('@cf/qwen/qwen3-30b-a3b-fp8'),
           prompt: agentPrompt, env, material,
-          totalMs: 90000, stepMs: 40000, maxRetries: 0,
+          totalMs: 100000, stepMs: 45000, maxRetries: 0,
         });
-        tweets = r.tweets; articlesRead = r.articlesRead; channel = 'workers-ai-agent';
-      } catch (e2) {
-        lastError = e2;
-      }
+        articles = r.articles; articlesRead = r.articlesRead; channel = 'workers-ai-agent';
+      } catch (e2) { lastError = e2; }
     }
 
-    // -- 通道3: 旧链路兜底（标题+摘要单次生成，无工具循环，已在线上验证可用）
-    if (!tweets) {
-      const legacy = await legacyGenerate({ apiKey, env, cf, material, profileText });
-      // legacy 不读原文——用 material 顺序做 best-effort 溯源映射，并诚实标记 ok=false（琥珀色 已读·摘要）
-      tweets = legacy.tweets.map((t, i) => {
-        const src = material[i % Math.max(1, material.length)] || {};
+    // -- 通道3: 旧链路兜底（按前5篇素材，每篇摘要+2推文）
+    if (!articles) {
+      const legacy = await legacyGenerate({ apiKey, env, cf, material: mat5, profileText });
+      articles = legacy.articles;
+      channel = legacy.channel;
+      legacyMode = true;
+      articlesRead = mat5.map(m => ({ title: m.title, url: m.url, ok: false }));
+    }
+
+    if (!articles || articles.length < 5) {
+      return jsonResponse({ code: 502, message: '推文生成失败: ' + (lastError?.message || `产出不足5篇（${articles?.length ?? 0}）`) }, 200);
+    }
+    const okMap = new Map(articlesRead.map(a => [a.url, a.ok === true]));
+
+    // 规范化：补齐 site link + charCount，然后并行抓 5 篇正文放进响应（用于前端直接展开显示）
+    const finalArticles = articles.slice(0, 5).map((a, i) => {
+      const url = a.articleUrl || mat5[i]?.url || '';
+      const title = a.articleTitle || mat5[i]?.title || '';
+      const meta = material.find(m => m.url === url) || mat5[i] || {};
+      const tweets = (a.tweets || []).slice(0, 2).map(t => {
+        const text = (t.text || '').includes('yingxinxian.pages.dev') ? (t.text || '') : `${t.text || ''}\n${SITE_URL}`;
         return {
-          text: t.text,
+          text,
+          charCount: xCharCount(text),
           angle: t.angle || '',
-          sourceTitle: src.title || t.sourceTitle || '',
-          sourceUrl: src.url || t.sourceUrl || '',
         };
       });
-      channel = legacy.channel;
-      articlesRead = material.slice(0, Math.min(3, material.length)).map(m => ({
-        title: m.title, url: m.url, ok: false,
-      }));
-    }
-
-    if (!tweets || !tweets.length) {
-      return jsonResponse({ code: 502, message: '推文生成失败: ' + (lastError?.message || '所有通道均失败') }, 200);
-    }
-
-    // 规范化：确保每条带站点链接 + 透传溯源字段
-    const normTweets = tweets.map(t => {
-      const text = t.text.includes('yingxinxian.pages.dev') ? t.text : t.text + '\n' + SITE_URL;
+      while (tweets.length < 2) tweets.push({ text: SITE_URL, charCount: xCharCount(SITE_URL), angle: '' });
       return {
-        text,
-        charCount: xCharCount(text),
-        angle: t.angle || '',
-        sourceTitle: t.sourceTitle || '',
-        sourceUrl: t.sourceUrl || '',
+        title,
+        url,
+        source: meta.source || '',
+        summary: String(a.summary || meta.summary || title || '').slice(0, 300),
+        tweets,
+        ok: okMap.has(url) ? okMap.get(url) : !legacyMode,
+        text: '', // 下方并行抓
       };
     });
+    // 并行拉正文（Agent 读过的命中缓存；超时/失败放降级提示，正文抓取不阻塞整体返回）
+    await Promise.allSettled(finalArticles.map(async (art) => {
+      if (!art.url) { art.ok = false; art.text = '（无有效素材链接）'; return; }
+      const meta = material.find(m => m.url === art.url) || {};
+      try {
+        const r = await Promise.race([
+          fetchArticleContent(art.url, env, { title: meta.title, summary: meta.summary }),
+          new Promise((_, rj) => setTimeout(() => rj(new Error('正文抓取超时(15s)')), 15000)),
+        ]);
+        art.ok = art.ok && (r.ok !== false);
+        art.text = r.text || '';
+        if (!art.title && r.title) art.title = r.title;
+      } catch (e) {
+        art.ok = false;
+        art.text = `（原文获取失败：${e.message || '未知错误'}。可点"源站↗"直接源站查看，或参考摘要核对推文）`;
+      }
+    }));
 
     return jsonResponse({
       code: 0,
-      tweets: normTweets,
-      material: material.map(n => ({ title: n.title, source: n.source, url: n.url, ts: n.ts })),
-      articlesRead,
+      articles: finalArticles,
       poolTotal: poolResult.total,
       poolStats: poolResult.stats,
       poolWindowHours: poolResult.windowHours || 24,
@@ -327,7 +394,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
   }
 }
 
-// ===== 旧链路（兜底）：标题+摘要 → 单次生成 → 正则解析 =====
+// ===== 旧链路（兜底）：前5条标题+摘要 → 单次生成 → 正则解析为 5×(摘要+2推文) =====
 async function legacyGenerate({ apiKey, env, cf, material, profileText }) {
   const materialText = material
     .map((n, i) => {
@@ -338,20 +405,19 @@ async function legacyGenerate({ apiKey, env, cf, material, profileText }) {
 
   const messages = [
     { role: 'system', content: NEWS_TWEET_SYSTEM },
-    { role: 'user', content: `【今日影视新闻素材（24小时内）】\n${materialText}\n\n【用户兴趣画像】\n${profileText || '（无特定偏好）'}\n\n请生成 3 条备选推文。` },
+    { role: 'user', content: `【今日影视新闻素材（24小时内，按匹配度排序，共 ${material.length} 条）】\n${materialText}\n\n【用户兴趣画像】\n${profileText || '（无特定偏好）'}\n\n请严格按系统提示的 5 组区块格式（===ART1=== ... ===ART5===）输出：每条素材 1 条中文摘要 + 2 条不同角度推文。` },
   ];
 
-  // DeepSeek 快试 → Workers AI 单次生成
   let raw = '';
   let channel = '';
   try {
-    const openai = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey, timeout: 12000, maxRetries: 1 });
+    const openai = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey, timeout: 15000, maxRetries: 1 });
     const c = await openai.chat.completions.create({
       model: 'deepseek-v4-flash',
       messages,
       stream: false,
       temperature: 0.9,
-      thinking: { type: 'disabled' }, // 关思考，防长上下文下耗时爆炸
+      thinking: { type: 'disabled' },
     });
     raw = c.choices?.[0]?.message?.content || '';
     channel = 'legacy-deepseek';
@@ -360,7 +426,7 @@ async function legacyGenerate({ apiKey, env, cf, material, profileText }) {
     const openai2 = new OpenAI({
       baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
       apiKey: env.CF_AI_TOKEN,
-      timeout: 60000,
+      timeout: 70000,
       maxRetries: 0,
     });
     const c = await openai2.chat.completions.create({
@@ -370,10 +436,9 @@ async function legacyGenerate({ apiKey, env, cf, material, profileText }) {
     channel = 'legacy-workers-ai';
   }
 
-  let texts = parseTweets(raw);
-  if (!texts.length && raw.trim()) texts = [raw.trim()];
-  if (!texts.length) throw new Error('旧链路也未产出有效推文');
-  return { tweets: texts.map(t => ({ text: t })), channel };
+  const articles = parseArticles(raw, material.slice(0, 5));
+  // parseArticles 已保证恰好 5 条、每条 2 条推文（不足时已兜底）
+  return { articles, channel };
 }
 
 export async function onRequestOptions() {

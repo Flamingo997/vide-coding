@@ -982,6 +982,80 @@ body {
 .mat-view-btn:hover { background: #F0F8FF; }
 .mat-open-link { flex-shrink: 0; font-size: 11px; color: var(--gray-3); text-decoration: none; }
 .mat-open-link:hover { color: #1D9BF0; }
+
+/* ====== 5×(原文+摘要+2推文) 呈现 ====== */
+.orig-blocks { display: flex; flex-direction: column; gap: 22px; margin-top: 8px; }
+.orig-block {
+  background: #fff;
+  border: 1px solid rgba(59,130,246,0.16);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+.orig-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #EEF2F7;
+  background: linear-gradient(180deg, #FBFDFF 0%, #FFFFFF 100%);
+}
+.orig-title-wrap { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 10px; }
+.orig-no {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #1E3A5F; color: #fff;
+  padding: 3px 9px; border-radius: 12px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
+}
+.orig-src { font-size: 12px; color: var(--gray-3); font-weight: 500; }
+.orig-title {
+  flex-basis: 100%;
+  margin: 4px 0 0; padding: 0;
+  font-size: 15.5px; line-height: 1.45; color: #0F172A;
+  font-weight: 600;
+}
+.orig-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* 正文大框：深色代码框风格，仿截图 */
+.orig-text {
+  margin: 0;
+  background: #111827;
+  color: #E5E7EB;
+  padding: 22px 22px 22px 22px;
+  font-size: 13px;
+  line-height: 1.72;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Microsoft YaHei Mono", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 440px;
+  overflow-y: auto;
+  border-radius: 0;
+}
+.orig-text::-webkit-scrollbar { width: 8px; }
+.orig-text::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.45); border-radius: 4px; }
+
+.orig-summary-block { padding: 14px 20px 18px; }
+.orig-tweets { padding: 4px 20px 20px; }
+.orig-section-title {
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 14px; line-height: 1.4;
+  font-weight: 600; color: #0F172A;
+  display: flex; align-items: baseline; gap: 4px;
+}
+.orig-sub-note { font-weight: 400; font-size: 12px; color: #6B7280; }
+.orig-summary-body {
+  font-size: 14px; line-height: 1.78; color: #374151;
+  padding: 10px 14px;
+  background: #F8FAFC;
+  border-left: 3px solid #3B82F6;
+  border-radius: 0 6px 6px 0;
+}
+
+/* 每篇下方 2 条推文卡片（堆叠在 orig-tweets 里） */
+.orig-tweet-card {
+  margin-top: 12px;
+}
+
 /* 原文查看弹窗 */
 .article-overlay {
   position: fixed; inset: 0; z-index: 1000;
