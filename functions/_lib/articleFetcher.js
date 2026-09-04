@@ -91,7 +91,7 @@ async function fetchViaJina(url, env) {
 
   const r = await fetch('https://r.jina.ai/' + url, {
     headers,
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(45000),
     cf: { cacheTtl: 21600, cacheEverything: true },
   });
   if (!r.ok) throw new Error('JINA HTTP ' + r.status);

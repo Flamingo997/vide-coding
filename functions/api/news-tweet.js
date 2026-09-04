@@ -279,7 +279,20 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
     // -- 通道3: 旧链路兜底（标题+摘要单次生成，无工具循环，已在线上验证可用）
     if (!tweets) {
       const legacy = await legacyGenerate({ apiKey, env, cf, material, profileText });
-      tweets = legacy.tweets; channel = legacy.channel;
+      // legacy 不读原文——用 material 顺序做 best-effort 溯源映射，并诚实标记 ok=false（琥珀色 已读·摘要）
+      tweets = legacy.tweets.map((t, i) => {
+        const src = material[i % Math.max(1, material.length)] || {};
+        return {
+          text: t.text,
+          angle: t.angle || '',
+          sourceTitle: src.title || t.sourceTitle || '',
+          sourceUrl: src.url || t.sourceUrl || '',
+        };
+      });
+      channel = legacy.channel;
+      articlesRead = material.slice(0, Math.min(3, material.length)).map(m => ({
+        title: m.title, url: m.url, ok: false,
+      }));
     }
 
     if (!tweets || !tweets.length) {

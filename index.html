@@ -1481,7 +1481,7 @@
     // 素材来源（可折叠，Agent 实际读过的带「已读」标记 + 原文按钮）
     if (data.material?.length) {
       const readMap = new Map((data.articlesRead || []).map(a => [a.url, a]));
-      html.push('<details class="tweet-material">');
+      html.push('<details open class="tweet-material">');
       const readCount = (data.articlesRead || []).length;
       html.push(`<summary>本次素材（${data.material.length} 条候选 · AI 实际阅读 ${readCount} 篇原文）</summary>`);
       html.push('<div class="tweet-material-list">');
