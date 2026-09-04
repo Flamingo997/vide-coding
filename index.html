@@ -1405,7 +1405,7 @@
           profileText: profile.profileText,
           profileKeywords: profile.profileKeywords,
         }),
-        signal: AbortSignal.timeout(180000), // 兜底：3 分钟必出结果（Agent 读原文较慢）
+        signal: AbortSignal.timeout(160000), // 兜底：Agent/legacy 双通道 + 5 篇正文并行抓取最坏约 150s
       });
       const data = await r.json();
       if (data.code !== 0 || !data.articles?.length) {

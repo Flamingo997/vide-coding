@@ -289,44 +289,38 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
     let lastError = null;
     let legacyMode = false; // 决定 ok 默认值（legacy=摘要,Agent=看具体条目）
 
+    // 探针（4s）：DeepSeek 跨境是否通
     let deepseekAlive = false;
     try {
       await generateText({
         model: deepseek.chat('deepseek-v4-flash'),
         prompt: 'OK',
         maxRetries: 0,
-        timeout: { totalMs: 5000 },
+        timeout: { totalMs: 4000 },
       });
       deepseekAlive = true;
     } catch (_) { deepseekAlive = false; }
 
+    // 通道 1：DeepSeek Agent（60s 硬超时，卡住就走 legacy 单轮）
     if (deepseekAlive) {
       try {
-        const r = await runAgent({
-          model: deepseek.chat('deepseek-v4-flash'),
-          prompt: agentPrompt, env, material,
-          totalMs: 110000, stepMs: 50000, maxRetries: 1,
-        });
+        const r = await Promise.race([
+          runAgent({
+            model: deepseek.chat('deepseek-v4-flash'),
+            prompt: agentPrompt, env, material,
+            totalMs: 50000, stepMs: 22000, maxRetries: 0,
+          }),
+          new Promise((_, rj) => setTimeout(() => rj(new Error('Agent 超时(60s)，已切到 legacy 单轮')), 60000)),
+        ]);
         articles = r.articles; articlesRead = r.articlesRead; channel = 'deepseek-agent';
       } catch (e1) { lastError = e1; }
     } else {
-      lastError = new Error('DeepSeek 探活失败（跨境不通）');
+      lastError = new Error('DeepSeek 跨境不通，已直接走 legacy+WorkersAI 单轮');
     }
 
-    if (!articles && cf) {
-      try {
-        const r = await runAgent({
-          model: cf.chat('@cf/qwen/qwen3-30b-a3b-fp8'),
-          prompt: agentPrompt, env, material,
-          totalMs: 100000, stepMs: 45000, maxRetries: 0,
-        });
-        articles = r.articles; articlesRead = r.articlesRead; channel = 'workers-ai-agent';
-      } catch (e2) { lastError = e2; }
-    }
-
-    // -- 通道3: 旧链路兜底（按前5篇素材，每篇摘要+2推文）
+    // 通道 2：旧链路兜底（按前5篇素材，每篇摘要+2推文）。探针已死就直接走 Workers AI，不再浪费时间试 DeepSeek
     if (!articles) {
-      const legacy = await legacyGenerate({ apiKey, env, cf, material: mat5, profileText });
+      const legacy = await legacyGenerate({ apiKey, env, cf, material: mat5, profileText, tryDeepSeek: deepseekAlive });
       articles = legacy.articles;
       channel = legacy.channel;
       legacyMode = true;
@@ -395,7 +389,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
 }
 
 // ===== 旧链路（兜底）：前5条标题+摘要 → 单次生成 → 正则解析为 5×(摘要+2推文) =====
-async function legacyGenerate({ apiKey, env, cf, material, profileText }) {
+async function legacyGenerate({ apiKey, env, cf, material, profileText, tryDeepSeek = true }) {
   const materialText = material
     .map((n, i) => {
       const line = `${i + 1}. [${n.source}] ${n.title}`;
@@ -410,19 +404,27 @@ async function legacyGenerate({ apiKey, env, cf, material, profileText }) {
 
   let raw = '';
   let channel = '';
-  try {
-    const openai = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey, timeout: 15000, maxRetries: 1 });
-    const c = await openai.chat.completions.create({
-      model: 'deepseek-v4-flash',
-      messages,
-      stream: false,
-      temperature: 0.9,
-      thinking: { type: 'disabled' },
-    });
-    raw = c.choices?.[0]?.message?.content || '';
-    channel = 'legacy-deepseek';
-  } catch (e1) {
-    if (!cf) throw e1;
+  let tried = false;
+  if (tryDeepSeek) {
+    try {
+      const openai = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey, timeout: 14000, maxRetries: 0 });
+      const c = await openai.chat.completions.create({
+        model: 'deepseek-v4-flash',
+        messages,
+        stream: false,
+        temperature: 0.9,
+        thinking: { type: 'disabled' },
+      });
+      raw = c.choices?.[0]?.message?.content || '';
+      channel = 'legacy-deepseek';
+      tried = true;
+    } catch (e1) { tried = true; /* fall to Workers AI */ }
+  }
+  if (!raw) {
+    if (!cf) {
+      if (!tried) throw new Error('Workers AI 不可用且 DeepSeek 已被跳过');
+      throw new Error('双通道都未产出');
+    }
     const openai2 = new OpenAI({
       baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
       apiKey: env.CF_AI_TOKEN,
