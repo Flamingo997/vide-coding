@@ -411,7 +411,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
           fetchArticleContent(art.url, env, { title: meta.title, summary: meta.summary }),
           new Promise((_, rj) => setTimeout(() => rj(new Error('正文抓取超时(15s)')), 15000)),
         ]);
-        art.ok = art.ok && (r.ok !== false);
+        art.ok = (r.ok !== false) && !!(r.text && r.text.length > 0);
         art.text = r.text || '';
         if (!art.title && r.title) art.title = r.title;
       } catch (e) {
