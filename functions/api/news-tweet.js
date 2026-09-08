@@ -247,7 +247,16 @@ export async function onRequestPost(context) {
       .map(item => ({ item, score: scoreNews(item, keywords) }))
       .sort((a, b) => b.score - a.score);
 
-    const material = scored.slice(0, MATERIAL_TOP).map(s => s.item);
+    // 候选保底：环球影讯最新 2 条强制进 top-10（该源更新频率波动大，防止被英文源挤出候选，
+    // 保证 Agent 一定"看得见"环球——但选不选仍由 Agent 按画像决定），其余 8 席按分数补满，
+    // 合并后仍按分数降序，保持"已按相关度排序"的语义
+    const HQ_FLOOR = 2;
+    const hqPicks = scored.filter(s => s.item.source === '环球影讯').slice(0, HQ_FLOOR);
+    const others = scored.filter(s => s.item.source !== '环球影讯');
+    const material = [...hqPicks, ...others.slice(0, Math.max(0, MATERIAL_TOP - hqPicks.length))]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MATERIAL_TOP)
+      .map(s => s.item);
 
     // ===== 3. Agent 生成（三级降级：DeepSeek Agent → Workers AI Agent → 旧链路）=====
 
