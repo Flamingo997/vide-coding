@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=20260904c">
+<link rel="stylesheet" href="styles.css?v=20260904d">
 </head>
 <body>
 
@@ -1451,6 +1451,7 @@
     subtitle.textContent = (poolInfo || '已生成') + ` · ${arts.length} 篇原文（已读全文 ${readN}）· ${arts.reduce((n, a) => n + (a.tweets?.length || 0), 0)} 条推文 · 通道：${data.channel || '未知'}`;
 
     window.__articleTweets = arts.map(a => (a.tweets || []).map(t => t.text));
+    window.__chatArticles = arts; // 「聊这条」入口按索引取文章上下文
 
     const html = [];
     html.push('<div class="orig-blocks">');
@@ -1470,6 +1471,8 @@
         statusText = '⚠ 基于摘要生成，未读原文'; statusClass = 'warn';
       }
       const safeText = textRaw.length ? textRaw.replace(/&/g, '&amp;').replace(/</g, '&lt;') : '（无正文内容，可点右侧源站链接查看）';
+      // 有正文才能聊：真实抓到正文（非降级占位，占位文案都以（开头）才放「聊这条」入口
+      const canChat = !!(a.text && a.text.length > 120 && !a.text.startsWith('（'));
 
       html.push(`<section class="orig-block">
   <div class="orig-head">
@@ -1480,6 +1483,7 @@
     </div>
     <div class="orig-actions">
       <span class="article-modal-status ${statusClass}">${statusText}</span>
+      ${canChat ? `<button class="chat-entry-btn" onclick="openChatEntry(${ai})">💬 聊这条</button>` : ''}
       <a class="mat-open-link" href="${url}" target="_blank" rel="noopener">源站↗</a>
     </div>
   </div>
@@ -1543,6 +1547,7 @@
           <pre class="article-modal-body" id="articleBody">正在获取原文…</pre>
           <div class="article-modal-foot">
             <span class="article-modal-status" id="articleStatus"></span>
+            <button class="chat-entry-btn" id="articleChatBtn" hidden>💬 聊这条</button>
             <a class="article-modal-open" id="articleOpen" href="#" target="_blank" rel="noopener">在源站打开 ↗</a>
           </div>
         </div>`;
@@ -1557,6 +1562,8 @@
     document.getElementById('articleStatus').textContent = url ? '' : '⚠️ 未命中文案对应素材，已打开候选原文供对照（非严格匹配）';
     document.getElementById('articleStatus').className = 'article-modal-status ' + (url ? '' : 'warn');
     document.getElementById('articleOpen').href = url || '#';
+    const chatBtn = document.getElementById('articleChatBtn');
+    chatBtn.hidden = true; // 每次打开先藏，抓取成功且有正文再显示
 
     if (!url) return;
 
@@ -1568,6 +1575,15 @@
       document.getElementById('articleBody').textContent = d.text || '（无内容）';
       document.getElementById('articleStatus').textContent = d.ok ? '✓ 原文抓取成功（Agent 生成时读取的内容）' : '⚠ 当时原文抓取失败，生成基于摘要';
       document.getElementById('articleStatus').className = 'article-modal-status ' + (d.ok ? 'good' : 'warn');
+      // 有正文才能聊：抓取成功且非占位文案，显示「聊这条」；点击 = 关弹窗 + 开聊天抽屉
+      if (d.ok && d.text && d.text.length > 120 && !d.text.startsWith('（')) {
+        chatBtn.hidden = false;
+        chatBtn.onclick = () => {
+          overlay.hidden = true;
+          const hit = (window.__chatArticles || []).find(x => x.url === url);
+          window.openChat({ url, title: d.title || (hit && hit.title) || '', source: hit ? hit.source : '', text: d.text });
+        };
+      }
     } catch (e) {
       document.getElementById('articleTitle').textContent = '获取失败';
       document.getElementById('articleBody').textContent = e.message || '未知错误';
@@ -1595,6 +1611,43 @@
       setTimeout(() => { btn.textContent = old; }, 1500);
     }
   };
+
+  // ============ 影视资讯聊天助手（React island 懒加载桥接） ============
+  // openChat(article)：island 就绪则直开；未就绪则暂存请求 + 动态 import（首点拉 ~300KB CDN 依赖）
+  window.openChat = async function (article) {
+    if (!article || !article.url) return;
+    if (window.__chatBridge) { window.__chatBridge.open(article); return; }
+    window.__pendingChatArticle = article;
+
+    if (!window.__chatIslandLoading) {
+      window.__chatIslandLoading = (async () => {
+        const root = document.getElementById('chatRoot');
+        if (root && !root.innerHTML) {
+          root.innerHTML = '<div class="chat-overlay"><aside class="chat-drawer"><div class="chat-boot-msg">正在加载聊天组件…</div></aside></div>';
+        }
+        try {
+          await import('./chat-island.js');
+        } catch (e) {
+          console.error('[chat] island 模块加载失败', e);
+          if (root) {
+            root.innerHTML = '<div class="chat-overlay" onclick="this.remove()"><aside class="chat-drawer"><div class="chat-boot-msg">聊天组件加载失败，请刷新页面重试。<br><br>点此关闭</div></aside></div>';
+          }
+          window.__chatIslandLoading = null;
+          window.__pendingChatArticle = null;
+          return;
+        }
+        // boot() 内部会消费 __pendingChatArticle 并渲染（加载中 shell 被覆盖）
+      })();
+    }
+  };
+
+  // 原文区块入口：按索引取文章上下文
+  window.openChatEntry = function (ai) {
+    const a = (window.__chatArticles || [])[ai];
+    if (!a) return;
+    window.openChat({ url: a.url, title: a.title, source: a.source, text: a.text });
+  };
+  // ============ 聊天助手 END ============
   // ============ 影讯推文 END ============
 
   async function renderRecommend() {
@@ -1991,5 +2044,7 @@
       initFavorites(); // 从 D1 加载收藏列表（已登录）或用 localStorage 兜底
     });
 </script>
+<!-- 聊天助手 React island 挂载点（首次点「聊这条」时动态加载 chat-island.js） -->
+<div id="chatRoot"></div>
 </body>
 </html>
