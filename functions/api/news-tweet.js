@@ -402,6 +402,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
       poolWindowHours: poolResult.windowHours || 24,
       channel,
       generatedAt: Date.now(),
+      _debugMaterialSources: material.map(m => m.source), // 临时调试：top-10 候选的源分布
     });
   } catch (e) {
     return jsonResponse({ code: 502, message: '推文生成失败: ' + (e.message || String(e)) }, 200);
