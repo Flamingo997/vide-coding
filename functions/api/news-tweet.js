@@ -249,14 +249,21 @@ export async function onRequestPost(context) {
 
     // 候选保底：环球影讯最新 2 条强制进 top-10（该源更新频率波动大，防止被英文源挤出候选，
     // 保证 Agent 一定"看得见"环球——但选不选仍由 Agent 按画像决定），其余 8 席按分数补满，
-    // 合并后仍按分数降序，保持"已按相关度排序"的语义
+    // 合并后仍按分数降序，保持"已按相关度排序"的语义。
+    // 额外：legacy 兜底路径只取前 5 条素材（material.slice(0,5)），若环球全在 6 名开外，
+    // qwen 单轮根本看不到环球。因此保底后检查前 5：若不含环球，将分数最高的那条环球提到第 5 位。
     const HQ_FLOOR = 2;
     const hqPicks = scored.filter(s => s.item.source === '环球影讯').slice(0, HQ_FLOOR);
     const others = scored.filter(s => s.item.source !== '环球影讯');
-    const material = [...hqPicks, ...others.slice(0, Math.max(0, MATERIAL_TOP - hqPicks.length))]
+    let materialScored = [...hqPicks, ...others.slice(0, Math.max(0, MATERIAL_TOP - hqPicks.length))]
       .sort((a, b) => b.score - a.score)
-      .slice(0, MATERIAL_TOP)
-      .map(s => s.item);
+      .slice(0, MATERIAL_TOP);
+    if (hqPicks.length && !materialScored.slice(0, 5).some(s => s.item.source === '环球影讯')) {
+      const firstHQ = materialScored.find(s => s.item.source === '环球影讯');
+      materialScored = materialScored.filter(s => s !== firstHQ);
+      materialScored.splice(4, 0, firstHQ); // 插到第 5 位，保证 legacy 前5素材含环球
+    }
+    const material = materialScored.map(s => s.item);
 
     // ===== 3. Agent 生成（三级降级：DeepSeek Agent → Workers AI Agent → 旧链路）=====
 
@@ -402,7 +409,6 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
       poolWindowHours: poolResult.windowHours || 24,
       channel,
       generatedAt: Date.now(),
-      _debugMaterialSources: material.map(m => m.source), // 临时调试：top-10 候选的源分布
     });
   } catch (e) {
     return jsonResponse({ code: 502, message: '推文生成失败: ' + (e.message || String(e)) }, 200);
