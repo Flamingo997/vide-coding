@@ -279,7 +279,7 @@ ${candidatesText}
 ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材）'}
 
 请按以下严格流程执行：
-1) 从候选列表中选出 5 篇最契合画像 + 最具话题度的新闻（必须恰好 5 篇）
+1) 从候选列表中选出 5 篇最契合画像 + 最具话题度的新闻（必须恰好 5 篇）——**其中必须至少包含 1 篇来自「环球影讯」的素材**，不能全选英文源
 2) 对每一篇，先调用 fetchArticle 获取其完整原文（可并行请求多篇）
 3) 阅读后，为每一篇产出：
    · 100-160 字中文摘要（严格基于原文事实，不能凭标题脑补）
@@ -357,6 +357,25 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
     if (!articles || articles.length < 5) {
       return jsonResponse({ code: 502, message: '推文生成失败: ' + (lastError?.message || `产出不足5篇（${articles?.length ?? 0}）`) }, 200);
     }
+
+    // 成稿保底：若 5 篇中无环球影讯，用候选里的环球素材替换最后一篇
+    // （不依赖模型遵循 prompt 指令，确保用户刷新一定能看到环球影讯内容）
+    const hqInMaterial = material.filter(m => m.source === '环球影讯');
+    const hasHQ = articles.some(a => hqInMaterial.some(h => h.url === a.articleUrl));
+    if (!hasHQ && hqInMaterial.length) {
+      const src = hqInMaterial[0];
+      const brief = src.summary && src.summary.length > 40 ? src.summary.slice(0, 120) + '…' : (src.summary || src.title || '');
+      articles[4] = {
+        articleTitle: src.title,
+        articleUrl: src.url,
+        summary: src.summary || src.title || '',
+        tweets: [
+          { text: brief || '（速报占位，换一批重试）', angle: '速报' },
+          { text: brief ? `关于《${src.title}》，你最关注哪一点？#影讯` : '（观点占位，换一批重试）', angle: '观点' },
+        ],
+      };
+    }
+
     const okMap = new Map(articlesRead.map(a => [a.url, a.ok === true]));
 
     // 规范化：剥离所有推广链接 + 重新算 charCount，然后并行抓 5 篇正文放进响应（用于前端直接展开显示）
@@ -426,7 +445,7 @@ async function legacyGenerate({ apiKey, env, cf, material, profileText, tryDeepS
 
   const messages = [
     { role: 'system', content: NEWS_TWEET_SYSTEM },
-    { role: 'user', content: `【今日影视新闻素材（24小时内，按匹配度排序，共 ${material.length} 条）】\n${materialText}\n\n【用户兴趣画像】\n${profileText || '（无特定偏好）'}\n\n请严格按系统提示的 5 组区块格式（===ART1=== ... ===ART5===）输出：每条素材 1 条中文摘要 + 2 条不同角度推文。` },
+    { role: 'user', content: `【今日影视新闻素材（24小时内，按匹配度排序，共 ${material.length} 条）】\n${materialText}\n\n【用户兴趣画像】\n${profileText || '（无特定偏好）'}\n\n请严格按系统提示的 5 组区块格式（===ART1=== ... ===ART5===）输出：每条素材 1 条中文摘要 + 2 条不同角度推文。\n\n硬性要求：5 篇中**必须至少包含 1 篇来自「环球影讯」的素材**，不能全部选英文源。` },
   ];
 
   let raw = '';
