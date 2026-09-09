@@ -125,10 +125,11 @@ async function boot() {
     const [input, setInput] = useState('');
     const listRef = useRef(null);
 
+    // autoQuestion（引导性问题 chip）标记 search=true：后端首条消息直接联网搜索补充上下文
     const transport = useMemo(() => new DefaultChatTransport({
       api: '/api/news-chat',
-      body: { url: article.url, title: article.title, source: article.source, text: article.text },
-    }), [article.url]);
+      body: { url: article.url, title: article.title, source: article.source, text: article.text, search: !!autoQuestion },
+    }), [article.url, autoQuestion]);
 
     const persist = useCallback(msgs => saveHistory(storageKey, msgs), [storageKey]);
 
