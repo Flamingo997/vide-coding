@@ -1365,13 +1365,15 @@
     } catch (_) {}
   }
 
-  // goView 钩子：有新格式缓存直接展示，否则自动生成（旧格式抛弃，强制重生）
+  // goView 钩子：有新格式缓存直接展示；无缓存不自动生成，等用户点「生成推文」
   function renderTweetEntry() {
     const cached = getTweetCache();
     if (cached && Array.isArray(cached.articles) && cached.articles.length) {
       renderTweetResult(cached);
     } else {
-      generateTweets();
+      document.getElementById('tweetBody').innerHTML =
+        '<div class="empty-tip">点击上方「生成推文」，AI 将扫描 24h 新闻池，按你的画像选 5 篇原文并生成推文（约 1-2 分钟）</div>';
+      document.getElementById('tweetRegenBtn').hidden = true;
     }
   }
 
