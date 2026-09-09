@@ -1054,6 +1054,21 @@ body {
   border-radius: 0 6px 6px 0;
 }
 
+/* 深挖一下：AI 引导性问题（点击 = 打开聊天抽屉自动发送） */
+.guide-block { padding: 0 20px 20px; }
+.guide-chips { display: flex; flex-direction: column; gap: 8px; }
+.guide-chip {
+  display: block; width: 100%; text-align: left;
+  border: 1px solid #FDE68A; background: #FFFBEB;
+  color: #92400E; border-radius: 10px;
+  padding: 10px 14px; font-size: 14px; line-height: 1.6;
+  cursor: pointer; font-family: inherit;
+  transition: background .15s, border-color .15s;
+}
+.guide-chip::before { content: '🧭 '; }
+.guide-chip:hover { background: #FEF3C7; border-color: #FACC15; }
+.guide-loading { font-size: 13px; color: #9CA3AF; padding: 6px 2px; }
+
 /* 每篇下方 2 条推文卡片（堆叠在 orig-tweets 里） */
 .orig-tweet-card {
   margin-top: 12px;

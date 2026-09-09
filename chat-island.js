@@ -87,16 +87,18 @@ async function boot() {
     } catch (_) {}
   }
 
-  // ===== 根组件：持锚文章 + 开合状态，向 vanilla 页面暴露 bridge =====
+  // ===== 根组件：持锚文章 + 开合状态 + 待自动发送的引导问题，向 vanilla 页面暴露 bridge =====
   function ChatApp() {
     const [article, setArticle] = useState(null);
     const [open, setOpen] = useState(false);
+    const [autoQuestion, setAutoQuestion] = useState('');
 
     useEffect(() => {
       window.__chatBridge = {
-        open(a) {
+        open(a, q) {
           if (!a || !a.url) return;
           setArticle(a);
+          setAutoQuestion(typeof q === 'string' ? q : '');
           setOpen(true);
         },
         close() { setOpen(false); },
@@ -105,17 +107,18 @@ async function boot() {
       const pend = window.__pendingChatArticle;
       if (pend) {
         window.__pendingChatArticle = null;
-        setArticle(pend);
+        setArticle(pend.article);
+        setAutoQuestion(typeof pend.question === 'string' ? pend.question : '');
         setOpen(true);
       }
     }, []);
 
     if (!open || !article) return null;
-    return html`<${ChatDrawer} key=${article.url} article=${article} onClose=${() => setOpen(false)} />`;
+    return html`<${ChatDrawer} key=${article.url} article=${article} autoQuestion=${autoQuestion} onClose=${() => setOpen(false)} />`;
   }
 
   // ===== 抽屉：一个 url 一个实例（key 换文章即换会话）=====
-  function ChatDrawer({ article, onClose }) {
+  function ChatDrawer({ article, autoQuestion, onClose }) {
     const storageKey = 'newschat:' + article.url;
     const [initialMessages] = useState(() => loadHistory(storageKey));
     const [uiError, setUiError] = useState('');
@@ -169,6 +172,12 @@ async function boot() {
       clearError();
       sendMessage({ text: t });
     }, [input, busy, sendMessage, clearError]);
+
+    // 引导性问题自动发送：从推文页「深挖一下」chip 点进来时执行一次
+    useEffect(() => {
+      if (autoQuestion) send(autoQuestion);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const onRetry = useCallback(() => {
       setUiError('');

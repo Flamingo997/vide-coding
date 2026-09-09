@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=20260904d">
+<link rel="stylesheet" href="styles.css?v=20260909a">
 </head>
 <body>
 
@@ -1474,6 +1474,12 @@
 </div>`);
       });
 
+      if (canChat) {
+        html.push(`<div class="guide-block">
+  <h4 class="orig-section-title">ⓞ 深挖一下 <span class="orig-sub-note">（AI 引导性问题 · 点击直接开聊）</span></h4>
+  <div class="guide-chips" id="guideChips_${ai}"><span class="guide-loading">AI 正在构思引导问题…</span></div>
+</div>`);
+      }
       html.push(`</div></section>`);
     });
 
@@ -1484,6 +1490,54 @@
       console.error('[推文渲染失败]', e);
       body.innerHTML = `<div style="color:#B91C1C;background:#FEF2F2;border:1px solid #FECACA;padding:12px 16px;border-radius:8px;margin:12px 0;font-size:13px">前端渲染异常：${e.message}<br>可打开控制台查看详情，或刷新重试。</div>` + html.join('');
     }
+
+    // 渲染完成后异步拉引导性问题（不阻塞推文展示）
+    fetchGuideQuestions(arts);
+  }
+
+  // 异步拉取每篇的引导性问题：成功后填充 chips，点击 chip = 打开聊天抽屉并自动发送该问题
+  // reqId 守卫：点「换一批」重新生成后，旧请求的回包直接丢弃
+  function fetchGuideQuestions(arts) {
+    const chatable = arts
+      .map((a, i) => ({ a, i }))
+      .filter(x => x.a.text && x.a.text.length > 120 && !String(x.a.text).startsWith('（'));
+    if (!chatable.length) return;
+    const reqId = (window.__guideReqId = (window.__guideReqId || 0) + 1);
+
+    fetch('/api/news-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        articles: chatable.map(x => ({ url: x.a.url, title: x.a.title, source: x.a.source, text: x.a.text })),
+      }),
+      signal: AbortSignal.timeout(45000),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (reqId !== window.__guideReqId) return;
+        if (data.code !== 0 || !Array.isArray(data.questions)) throw new Error(data.message || '生成失败');
+        const byUrl = new Map(data.questions.map(q => [q.url, q.questions || []]));
+        chatable.forEach(x => {
+          const el = document.getElementById('guideChips_' + x.i);
+          if (!el) return;
+          const qs = byUrl.get(x.a.url) || [];
+          el.innerHTML = qs.length
+            ? qs.map(q => {
+                const safe = String(q).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+                return `<button class="guide-chip" data-q="${safe}" onclick="openChatEntry(${x.i}, this.dataset.q)">${safe}</button>`;
+              }).join('')
+            : '<span class="guide-loading">（本篇没出引导问题，可直接点「聊这条」）</span>';
+        });
+      })
+      .catch(() => {
+        if (reqId !== window.__guideReqId) return;
+        chatable.forEach(x => {
+          const el = document.getElementById('guideChips_' + x.i);
+          if (el && el.querySelector('.guide-loading')) {
+            el.innerHTML = '<span class="guide-loading">（引导问题生成失败，可直接点「聊这条」提问）</span>';
+          }
+        });
+      });
   }
 
   // 查看文章原文（溯源弹窗）
@@ -1577,11 +1631,12 @@
   };
 
   // ============ 影视资讯聊天助手（React island 懒加载桥接） ============
-  // openChat(article)：island 就绪则直开；未就绪则暂存请求 + 动态 import（首点拉 ~300KB CDN 依赖）
-  window.openChat = async function (article) {
+  // openChat(article, question?)：island 就绪则直开（question 非空 = 自动发送该引导问题）；
+  // 未就绪则暂存请求 + 动态 import（首点拉 ~300KB CDN 依赖）
+  window.openChat = async function (article, question) {
     if (!article || !article.url) return;
-    if (window.__chatBridge) { window.__chatBridge.open(article); return; }
-    window.__pendingChatArticle = article;
+    if (window.__chatBridge) { window.__chatBridge.open(article, question); return; }
+    window.__pendingChatArticle = { article, question };
 
     if (!window.__chatIslandLoading) {
       window.__chatIslandLoading = (async () => {
@@ -1605,11 +1660,11 @@
     }
   };
 
-  // 原文区块入口：按索引取文章上下文
-  window.openChatEntry = function (ai) {
+  // 原文区块入口：按索引取文章上下文；question 非空 = 引导性问题，开聊后自动发送
+  window.openChatEntry = function (ai, question) {
     const a = (window.__chatArticles || [])[ai];
     if (!a) return;
-    window.openChat({ url: a.url, title: a.title, source: a.source, text: a.text });
+    window.openChat({ url: a.url, title: a.title, source: a.source, text: a.text }, question);
   };
   // ============ 聊天助手 END ============
   // ============ 影讯推文 END ============
