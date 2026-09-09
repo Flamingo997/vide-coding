@@ -196,15 +196,15 @@ export async function onRequestGet(context) {
       tmdb('/movie/upcoming?region=CN&page=1', key, 'en-US'),
       tmdb('/tv/on_the_air?page=1', key, 'zh-CN'),
       tmdb('/tv/on_the_air?page=1', key, 'en-US'),
-      // 电视剧：genre 18(剧情) 10766(肥皂) 10765(科幻奇幻)，日期>=2024-01-01
-      tmdb(`/discover/tv?with_genres=18,10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
-      tmdb(`/discover/tv?with_genres=18,10766,10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 电视剧：genre 18(剧情) 10766(肥皂) 10765(科幻奇幻)——竖线=OR（逗号是AND，会要求三类型同时满足，几乎查不到结果）
+      tmdb(`/discover/tv?with_genres=18|10766|10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=18|10766|10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
       // 动漫：genre 16(动画)，日期>=2026-06-01
       tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
       tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
-      // 综艺：genre 10764(真人秀) 10767(脱口秀)，日期>=2026-06-01
-      tmdb(`/discover/tv?with_genres=10764,10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
-      tmdb(`/discover/tv?with_genres=10764,10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
+      // 综艺：genre 10764(真人秀) 10767(脱口秀)——竖线=OR（同上，逗号AND查不到结果）
+      tmdb(`/discover/tv?with_genres=10764|10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
+      tmdb(`/discover/tv?with_genres=10764|10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
       // 纪录片电影：genre 99，日期>=2026-06-01
       tmdb(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'zh-CN'),
       tmdb(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=popularity.desc&page=1`, key, 'en-US'),
