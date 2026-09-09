@@ -193,7 +193,7 @@
 
     <div class="tweet-actions">
       <button class="tweet-generate-btn" id="tweetGenBtn" onclick="generateTweets()">生成推文</button>
-      <button class="tweet-regen-btn" id="tweetRegenBtn" onclick="generateTweets(true)" hidden>换一批</button>
+      <button class="tweet-regen-btn" id="tweetRegenBtn" onclick="generateTweets()" hidden>换一批</button>
     </div>
 
     <div class="tweet-loading" id="tweetLoading" hidden>
@@ -1254,8 +1254,6 @@
   // ============ 影讯推文：浏览追踪 + 画像 + 生成 + 渲染 ============
   // ============================================================
   const BROWSE_KEY = 'yingxinxian_browse';
-  const TWEET_CACHE_KEY = 'yingxinxian_tweet_cache';
-  const TWEET_BUCKET_MS = 6 * 3600 * 1000; // 6 小时一个生成桶（每天4次）
 
   function getBrowseData() {
     try { return JSON.parse(localStorage.getItem(BROWSE_KEY) || '{"typeFreq":{},"cards":[]}') || {}; }
@@ -1350,46 +1348,20 @@
     return n;
   }
 
-  // 6 小时桶缓存
-  function tweetBucket() { return Math.floor(Date.now() / TWEET_BUCKET_MS); }
-  function getTweetCache() {
-    try {
-      const c = JSON.parse(localStorage.getItem(TWEET_CACHE_KEY) || 'null');
-      if (c && c.bucket === tweetBucket()) return c;
-    } catch (_) {}
-    return null;
-  }
-  function saveTweetCache(data) {
-    try {
-      localStorage.setItem(TWEET_CACHE_KEY, JSON.stringify({ bucket: tweetBucket(), ...data }));
-    } catch (_) {}
-  }
-
-  // goView 钩子：有新格式缓存直接展示；无缓存不自动生成，等用户点「生成推文」
+  // goView 钩子：不自动生成、不展示缓存，等用户点「生成推文」
   function renderTweetEntry() {
-    const cached = getTweetCache();
-    if (cached && Array.isArray(cached.articles) && cached.articles.length) {
-      renderTweetResult(cached);
-    } else {
-      document.getElementById('tweetBody').innerHTML =
-        '<div class="empty-tip">点击上方「生成推文」，AI 将扫描 24h 新闻池，按你的画像选 5 篇原文并生成推文（约 1-2 分钟）</div>';
-      document.getElementById('tweetRegenBtn').hidden = true;
-    }
+    document.getElementById('tweetBody').innerHTML =
+      '<div class="empty-tip">点击上方「生成推文」，AI 将扫描 24h 新闻池，按你的画像选 5 篇原文并生成推文（约 1-2 分钟）</div>';
+    document.getElementById('tweetRegenBtn').hidden = true;
   }
 
-  // 生成备选推文（force=true 跳过缓存重新生成）
-  window.generateTweets = async function (force = false) {
+  // 生成备选推文：每次点击都重新生成（无缓存）
+  window.generateTweets = async function () {
     const body = document.getElementById('tweetBody');
     const loading = document.getElementById('tweetLoading');
     const genBtn = document.getElementById('tweetGenBtn');
     const regenBtn = document.getElementById('tweetRegenBtn');
     const subtitle = document.getElementById('tweetSubtitle');
-
-    if (!force) {
-      const cached = getTweetCache();
-      // 只认新格式（articles[]），老格式缓存（只有 tweets[]）抛弃 → 强制走重生
-      if (cached && Array.isArray(cached.articles) && cached.articles.length) { renderTweetResult(cached); return; }
-    }
 
     loading.hidden = false;
     body.innerHTML = '';
@@ -1413,20 +1385,10 @@
       if (data.code !== 0 || !data.articles?.length) {
         throw new Error(data.message || '生成失败');
       }
-      saveTweetCache(data);
       renderTweetResult(data);
     } catch (e) {
-      // 失败兜底：显示上一次的新格式结果（若有），避免空手而归
-      const old = (() => {
-        try { return JSON.parse(localStorage.getItem(TWEET_CACHE_KEY) || 'null'); } catch (_) { return null; }
-      })();
-      if (old && Array.isArray(old.articles) && old.articles.length) {
-        renderTweetResult(old);
-        subtitle.textContent = '本次生成失败（' + (e.message || '超时') + '），已显示上次结果，可点「换一批」重试';
-      } else {
-        body.innerHTML = `<div class="empty-tip">生成失败：${e.message || '未知错误'}，稍后重试</div>`;
-        subtitle.textContent = '可点击按钮重新生成';
-      }
+      body.innerHTML = `<div class="empty-tip">生成失败：${e.message || '未知错误'}，稍后重试</div>`;
+      subtitle.textContent = '可点击按钮重新生成';
     } finally {
       loading.hidden = true;
       genBtn.disabled = false;
