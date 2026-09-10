@@ -1666,6 +1666,49 @@
     if (!a) return;
     window.openChat({ url: a.url, title: a.title, source: a.source, text: a.text }, question);
   };
+
+  // ============ 全站 AI 助手（右下角圆形按钮 → chat-island.js 全站模式） ============
+  // 懒加载 island（与 openChat 共用 __chatIslandLoading），就绪后调 bridge.openStation()
+  window.openStationChat = async function () {
+    if (window.__chatBridge) { window.__chatBridge.openStation(); return; }
+    window.__pendingStation = true;
+    if (!window.__chatIslandLoading) {
+      window.__chatIslandLoading = (async () => {
+        const root = document.getElementById('chatRoot');
+        if (root && !root.innerHTML) {
+          root.innerHTML = '<div class="chat-overlay"><aside class="chat-drawer"><div class="chat-boot-msg">正在加载 AI 助手…</div></aside></div>';
+        }
+        try {
+          await import('./chat-island.js');
+        } catch (e) {
+          console.error('[chat] island 模块加载失败', e);
+          if (root) {
+            root.innerHTML = '<div class="chat-overlay" onclick="this.remove()"><aside class="chat-drawer"><div class="chat-boot-msg">AI 助手加载失败，请刷新页面重试。<br><br>点此关闭</div></aside></div>';
+          }
+          window.__chatIslandLoading = null;
+          window.__pendingStation = null;
+        }
+        // boot() 内部会消费 __pendingStation 并渲染
+      })();
+    }
+  };
+
+  // 策略A：全站助手发起请求时采集当前站条目（≤50 条短字段），供后端 searchItems 工具检索
+  window.getStationItems = function () {
+    try {
+      return (typeof NEWS !== 'undefined' && Array.isArray(NEWS) ? NEWS : [])
+        .map(n => ({
+          id: n.id || '',
+          title: n.title || '',
+          type: n.type || '',
+          date: n.date || '',
+          summary: String(n.summary || '').slice(0, 60),
+        }))
+        .filter(x => x.title)
+        .slice(0, 50);
+    } catch (_) { return []; }
+  };
+  // ============ 全站 AI 助手 END ============
   // ============ 聊天助手 END ============
   // ============ 影讯推文 END ============
 
@@ -2061,9 +2104,27 @@
       renderCatGroups();
       renderSidebar();
       initFavorites(); // 从 D1 加载收藏列表（已登录）或用 localStorage 兜底
+      // 站内深链：/?q=关键词 → 自动进时间线检索（全站 AI 助手给出的条目链接用）
+      try {
+        const q = (new URLSearchParams(location.search).get('q') || '').trim();
+        if (q) {
+          const input = document.getElementById('searchInput');
+          if (input) {
+            input.value = q;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      } catch (_) {}
     });
 </script>
-<!-- 聊天助手 React island 挂载点（首次点「聊这条」时动态加载 chat-island.js） -->
+<!-- 全站 AI 助手：圆形悬浮按钮（点击懒加载 chat-island.js 全站模式） -->
+<button id="stationFab" class="station-fab" onclick="openStationChat()" aria-label="AI 助手" title="问 AI 助手找片">
+  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 3l1.75 4.7L18.5 9.5l-4.75 1.8L12 16l-1.75-4.7L5.5 9.5l4.75-1.8z"/>
+    <path d="M18.5 15.5l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/>
+  </svg>
+</button>
+<!-- 聊天助手 React island 挂载点（首次点「聊这条」/ AI 按钮时动态加载 chat-island.js） -->
 <div id="chatRoot"></div>
 </body>
 </html>

@@ -65,6 +65,8 @@ async function boot() {
   const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
   const QUICK_CHIPS = ['这篇的重点帮我划一下', '这条新闻对行业意味着什么', '有什么值得吐槽的点'];
+  // 全站模式快捷问题：对应 /api/assistant 的 searchItems 工具（类型词→TMDB discover）
+  const STATION_CHIPS = ['有什么好看的科幻片？', '帮我找几部悬疑电影', '最近有什么喜剧可以看？'];
   const MAX_INPUT = 500;
 
   const textOf = m => (m.parts || []).filter(p => p.type === 'text').map(p => p.text).join('\n');
@@ -87,18 +89,25 @@ async function boot() {
     } catch (_) {}
   }
 
-  // ===== 根组件：持锚文章 + 开合状态 + 待自动发送的引导问题，向 vanilla 页面暴露 bridge =====
+  // ===== 根组件：文章对谈 / 全站助手 两种模式 + 开合状态，向 vanilla 页面暴露 bridge =====
   function ChatApp() {
     const [article, setArticle] = useState(null);
     const [open, setOpen] = useState(false);
     const [autoQuestion, setAutoQuestion] = useState('');
+    const [station, setStation] = useState(false);
 
     useEffect(() => {
       window.__chatBridge = {
         open(a, q) {
           if (!a || !a.url) return;
+          setStation(false);
           setArticle(a);
           setAutoQuestion(typeof q === 'string' ? q : '');
+          setOpen(true);
+        },
+        // 全站助手：右下角圆形按钮入口，无文章上下文，调 /api/assistant
+        openStation() {
+          setStation(true);
           setOpen(true);
         },
         close() { setOpen(false); },
@@ -107,34 +116,46 @@ async function boot() {
       const pend = window.__pendingChatArticle;
       if (pend) {
         window.__pendingChatArticle = null;
+        setStation(false);
         setArticle(pend.article);
         setAutoQuestion(typeof pend.question === 'string' ? pend.question : '');
         setOpen(true);
       }
+      if (window.__pendingStation) {
+        window.__pendingStation = null;
+        setStation(true);
+        setOpen(true);
+      }
     }, []);
 
-    if (!open || !article) return null;
+    if (!open) return null;
+    // 全站模式：固定单实例（历史持久化到 stationchat:v1）
+    if (station) return html`<${ChatDrawer} key="station" station=${true} onClose=${() => setOpen(false)} />`;
+    if (!article) return null;
     return html`<${ChatDrawer} key=${article.url} article=${article} autoQuestion=${autoQuestion} onClose=${() => setOpen(false)} />`;
   }
 
-  // ===== 抽屉：一个 url 一个实例（key 换文章即换会话）=====
-  function ChatDrawer({ article, autoQuestion, onClose }) {
-    const storageKey = 'newschat:' + article.url;
+  // ===== 抽屉：station=true 全站助手（/api/assistant + searchItems 工具）；否则单篇文章对谈（/api/news-chat）=====
+  function ChatDrawer({ article, autoQuestion, station, onClose }) {
+    const storageKey = station ? 'stationchat:v1' : ('newschat:' + article.url);
     const [initialMessages] = useState(() => loadHistory(storageKey));
     const [uiError, setUiError] = useState('');
     const [input, setInput] = useState('');
     const listRef = useRef(null);
 
-    // autoQuestion（引导性问题 chip）标记 search=true：后端首条消息直接联网搜索补充上下文
+    // 全站模式：策略A——挂载时采集当前页条目（≤50，短字段）供后端工具检索；
+    // 文章模式：autoQuestion（深挖chip）标记 search=true，后端首条直接联网搜索
     const transport = useMemo(() => new DefaultChatTransport({
-      api: '/api/news-chat',
-      body: { url: article.url, title: article.title, source: article.source, text: article.text, search: !!autoQuestion },
-    }), [article.url, autoQuestion]);
+      api: station ? '/api/assistant' : '/api/news-chat',
+      body: station
+        ? { items: (typeof window !== 'undefined' && window.getStationItems) ? window.getStationItems() : [] }
+        : { url: article.url, title: article.title, source: article.source, text: article.text, search: !!autoQuestion },
+    }), [station, article ? article.url : null, autoQuestion]);
 
     const persist = useCallback(msgs => saveHistory(storageKey, msgs), [storageKey]);
 
     const { messages, sendMessage, status, stop, regenerate, clearError } = useChat({
-      id: article.url,
+      id: station ? 'station' : article.url,
       messages: initialMessages,
       transport,
       onFinish: ({ messages: msgs }) => persist(msgs),
@@ -174,9 +195,9 @@ async function boot() {
       sendMessage({ text: t });
     }, [input, busy, sendMessage, clearError]);
 
-    // 引导性问题自动发送：从推文页「深挖一下」chip 点进来时执行一次
+    // 引导性问题自动发送：从推文页「深挖一下」chip 点进来时执行一次（仅文章模式）
     useEffect(() => {
-      if (autoQuestion) send(autoQuestion);
+      if (!station && autoQuestion) send(autoQuestion);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -189,22 +210,31 @@ async function boot() {
     const lastMsg = messages[messages.length - 1];
     const showDots = busy && (!lastMsg || lastMsg.role === 'user' || !textOf(lastMsg));
 
+    const chips = station ? STATION_CHIPS : QUICK_CHIPS;
+
     return html`
       <div class="chat-overlay" onMouseDown=${e => { if (e.target === e.currentTarget) onClose(); }}>
-        <aside class="chat-drawer" role="dialog" aria-label="影视资讯聊天">
+        <aside class="chat-drawer" role="dialog" aria-label=${station ? '全站 AI 助手' : '影视资讯聊天'}>
           <header class="chat-head">
             <div class="chat-head-info">
-              <span class="chat-head-src">[${article.source || '影讯'}]</span>
-              <a class="chat-head-title" href=${article.url} target="_blank" rel="noopener" title=${article.title}>${article.title}</a>
+              ${station ? html`
+                <span class="chat-head-src">[AI助手]</span>
+                <span class="chat-head-title" title="影新鲜站内助手">影新鲜站内助手 · 找片 / 查资讯</span>
+              ` : html`
+                <span class="chat-head-src">[${article.source || '影讯'}]</span>
+                <a class="chat-head-title" href=${article.url} target="_blank" rel="noopener" title=${article.title}>${article.title}</a>
+              `}
             </div>
             <button class="chat-close" onClick=${onClose} aria-label="关闭对谈">✕</button>
           </header>
 
           <div class="chat-list" ref=${listRef}>
             ${messages.length === 0 ? html`
-              <div class="chat-welcome">就这一篇新闻随便聊——追问背景、聊观点、问细节都行，我只按原文说话。</div>
+              <div class="chat-welcome">${station
+                ? '想找什么片直接问——片名、类型、演员都行，我只推荐站里真实有的。'
+                : '就这一篇新闻随便聊——追问背景、聊观点、问细节都行，我只按原文说话。'}</div>
               <div class="chat-chips">
-                ${QUICK_CHIPS.map(c => html`<button class="chat-chip" key=${c} onClick=${() => send(c)}>${c}</button>`)}
+                ${chips.map(c => html`<button class="chat-chip" key=${c} onClick=${() => send(c)}>${c}</button>`)}
               </div>
             ` : null}
 
@@ -228,7 +258,7 @@ async function boot() {
             <textarea
               class="chat-input"
               rows="2"
-              placeholder="就这条新闻说点什么…（Enter 发送 / Shift+Enter 换行）"
+              placeholder=${station ? '想找什么片？片名、类型都行…（Enter 发送 / Shift+Enter 换行）' : '就这条新闻说点什么…（Enter 发送 / Shift+Enter 换行）'}
               value=${input}
               maxLength=${MAX_INPUT}
               onInput=${e => setInput(e.target.value)}

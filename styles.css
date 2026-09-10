@@ -903,6 +903,28 @@ body {
 .back-top.show { opacity: 1; pointer-events: auto; }
 .back-top:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(47, 134, 255, 0.45); }
 
+/* ===== 全站 AI 助手：圆形悬浮按钮（位于回到顶部上方） ===== */
+.station-fab {
+  position: fixed;
+  right: 32px; bottom: 96px;
+  width: 52px; height: 52px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%;
+  background: linear-gradient(135deg, #6E5BFF, #2F86FF);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(84, 72, 255, 0.4);
+  cursor: pointer;
+  z-index: 90;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.station-fab svg { display: block; }
+.station-fab:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 10px 28px rgba(84, 72, 255, 0.5); }
+.station-fab:active { transform: scale(0.95); }
+@media (max-width: 640px) {
+  .station-fab { right: 20px; bottom: 88px; width: 48px; height: 48px; }
+  .station-fab svg { width: 22px; height: 22px; }
+}
+
 /* ===== 影讯推文 ===== */
 .tweet-actions { display: flex; gap: 12px; margin-bottom: 24px; }
 .tweet-generate-btn {

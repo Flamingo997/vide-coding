@@ -4,6 +4,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.53",
     "ai": "^7.0.85",
-    "openai": "^4.77.0"
+    "openai": "^4.77.0",
+    "zod": "^3.25.76"
   }
 }
