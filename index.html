@@ -1975,9 +1975,9 @@
         const movies = data.movies;
         // 渲染票房榜
         document.getElementById('boxOffice').innerHTML = movies.slice(0, 5).map((m, i) => {
-          // 从 NEWS 中匹配海报
+          // 海报优先级：API 的 TMDB 补全 > NEWS 本地匹配 > 默认海报
           const newsMatch = NEWS.find(n => n.title.includes(m.name));
-          const poster = (newsMatch && (newsMatch.poster || POSTER_MAP[newsMatch.title])) || 'posters/default.jpg';
+          const poster = m.poster || (newsMatch && (newsMatch.poster || POSTER_MAP[newsMatch.title])) || 'posters/default.jpg';
           if (i === 0) {
             return `
               <div class="bo-item bo-top">

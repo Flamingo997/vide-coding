@@ -1,8 +1,43 @@
 // Cloudflare Pages Function：猫眼专业版实时票房数据代理
 // 代理 https://piaofang.maoyan.com/getBoxList 接口，添加必要的请求头
 // GET /api/maoyan
+// 海报补全：猫眼不返回海报，服务端按片名查 TMDB search/movie 取 poster_path（5s 超时，失败留空走前端兜底）
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+const TMDB_POSTER_BASE = 'https://image.tmdb.org/t/p/w185';
+
+// 清洗片名用于 TMDB 搜索：去掉全半角标点（八仙！→八仙、蜘蛛侠：崭新之日→蜘蛛侠崭新之日）
+function cleanNameForSearch(name) {
+  return String(name || '').replace(/[！!？?：:；;，,、《》""''（）()·\s]/g, '').trim();
+}
+
+// 按片名查 TMDB 海报：优先选近两年上映的同名结果（票房榜都是在映片），取第一张可用海报
+async function fetchTmdbPoster(name, apiKey) {
+  const q = cleanNameForSearch(name);
+  if (!q || !apiKey) return '';
+  try {
+    const r = await fetch(
+      `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&language=zh-CN&query=${encodeURIComponent(q)}&include_adult=false&page=1`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!r.ok) return '';
+    const j = await r.json();
+    const results = (j.results || []).filter(x => x.poster_path);
+    if (!results.length) return '';
+    // 排序：有发布日期的优先，日期新的在前（在映片）
+    const now = Date.now();
+    results.sort((a, b) => {
+      const ta = a.release_date ? new Date(a.release_date).getTime() : 0;
+      const tb = b.release_date ? new Date(b.release_date).getTime() : 0;
+      // 未来日期或太老（>3年）降权
+      const score = t => (t > 0 && t <= now && now - t < 3 * 365 * 864e5) ? t : 0;
+      return score(tb) - score(ta);
+    });
+    return TMDB_POSTER_BASE + results[0].poster_path;
+  } catch (_) {
+    return '';
+  }
+}
 
 export async function onRequestGet(context) {
   try {
@@ -159,6 +194,13 @@ export async function onRequestGet(context) {
       timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
     }
 
+    // 海报补全：猫眼不返回海报，按片名并发查 TMDB（失败留空，前端兜底本地匹配/默认海报）
+    const topMovies = movies.slice(0, 10);
+    if (context.env?.TMDB_API_KEY) {
+      const posters = await Promise.all(topMovies.map(m => fetchTmdbPoster(m.name, context.env.TMDB_API_KEY)));
+      topMovies.forEach((m, i) => { m.poster = posters[i] || ''; });
+    }
+
     return new Response(JSON.stringify({
       code: 0,
       message: 'ok',
@@ -167,7 +209,7 @@ export async function onRequestGet(context) {
       totalBoxWan: Math.round(totalBoxWan * 100) / 100,
       totalBoxYi,
       totalBoxDesc,
-      movies: movies.slice(0, 10),
+      movies: topMovies,
       source: '猫眼专业版'
     }), {
       headers: {
