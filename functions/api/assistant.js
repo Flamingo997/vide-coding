@@ -193,6 +193,93 @@ function searchBodyItems(items, query, limit) {
   return out;
 }
 
+// ===== getItemById：按 id 查条目详情（追问场景） =====
+// id 三种形态：tmdb-movie-<id> / tmdb-tv-<id>（TMDB 详情）、news-<url尾部32字符>（新闻池按url尾部匹配）、
+// 其他 = 策略A body items 的原始 id（含空 id 兜底按标题跳站内搜索）
+const MAX_OVERVIEW = 200; // 详情简介截断（防超上下文）
+
+// TMDB 单条详情：标题/日期/评分/类型/简介
+async function tmdbDetail(tmdbId, mediaType, key) {
+  try {
+    const r = await fetch(
+      `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${key}&language=zh-CN`,
+      { signal: AbortSignal.timeout(TMDB_TIMEOUT_MS) }
+    );
+    if (!r.ok) return null;
+    const j = await r.json();
+    const title = mediaType === 'movie' ? (j.title || j.original_title) : (j.name || j.original_name);
+    if (!title) return null;
+    return {
+      id: `tmdb-${mediaType}-${tmdbId}`,
+      title,
+      type: mediaType === 'movie' ? 'movie' : 'drama',
+      date: mediaType === 'movie' ? (j.release_date || '') : (j.first_air_date || ''),
+      rating: j.vote_count ? Number((j.vote_average || 0).toFixed(1)) : null,
+      voteCount: j.vote_count || 0,
+      genres: (j.genres || []).map(g => g.name).filter(Boolean).join(' / '),
+      overview: String(j.overview || '').trim().slice(0, MAX_OVERVIEW),
+      url: stationUrl(title),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+// 新闻池按 url 尾部匹配（searchNewsPool 生成的 id = 'news-' + url 后 32 字符）
+async function newsDetailById(id, limit = 30) {
+  try {
+    const timer = new Promise(resolve => setTimeout(() => resolve(null), POOL_TIMEOUT_MS));
+    const result = await Promise.race([buildNewsPool(), timer]);
+    if (!result || !Array.isArray(result.pool)) return null;
+    const tail = String(id).replace(/^news-/, '');
+    for (const n of result.pool.slice(0, 100)) {
+      if (String(n.url || '').slice(-32) === tail) {
+        return {
+          id,
+          title: n.title,
+          type: 'news',
+          date: n.ts ? new Date(n.ts).toISOString().slice(0, 10) : '',
+          source: n.source || '',
+          summary: String(n.summary || '').slice(0, MAX_OVERVIEW),
+          url: n.url || stationUrl(n.title),
+        };
+      }
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// getItemById 总入口：按 id 前缀分发到 TMDB / 新闻池 / body items；查不到返回 null（模型会明说没有）
+async function getItemByIdData(id, env, bodyItems) {
+  const raw = String(id || '').trim();
+  if (!raw) return null;
+
+  const tmdbM = raw.match(/^tmdb-(movie|tv)-(\d+)$/);
+  if (tmdbM && env.TMDB_API_KEY) {
+    return tmdbDetail(tmdbM[2], tmdbM[1], env.TMDB_API_KEY);
+  }
+  if (raw.startsWith('news-')) {
+    return newsDetailById(raw);
+  }
+  // 策略A body items：按 id 精确匹配（id 可能为空串则跳过）
+  if (raw && bodyItems.length) {
+    const hit = bodyItems.find(it => String(it.id || '') === raw && it.title);
+    if (hit) {
+      return {
+        id: raw,
+        title: String(hit.title),
+        type: String(hit.type || ''),
+        date: String(hit.date || ''),
+        summary: String(hit.summary || '').slice(0, MAX_OVERVIEW),
+        url: stationUrl(hit.title),
+      };
+    }
+  }
+  return null;
+}
+
 // ===== D1 收藏查询（复用 favorites.js 的会话校验逻辑） =====
 function getCookie(cookieHeader, name) {
   if (!cookieHeader) return null;
@@ -260,7 +347,15 @@ export async function onRequestPost(context) {
   const { messages = [], items = [] } = payload || {};
   const bodyItems = (Array.isArray(items) ? items : []).slice(0, MAX_BODY_ITEMS);
 
-  // 历史裁剪 + 输入长度护栏：只留 user/assistant 的文本部分
+  // 历史裁剪 + 输入长度护栏：保留文本 + 已完成的 tool parts（追问场景模型要靠上一轮工具结果里的 id 调 getItemById；
+  // convertToModelMessages 会把 output-available 的 tool part 转成 tool-call/tool-result）
+  const slimToolPart = p => ({
+    type: p.type,
+    toolCallId: String(p.toolCallId || ''),
+    state: 'output-available',
+    input: p.input,
+    output: p.output,
+  });
   const trimmed = (Array.isArray(messages) ? messages : [])
     .filter(m => m && (m.role === 'user' || m.role === 'assistant'))
     .slice(-MAX_MSGS)
@@ -268,11 +363,13 @@ export async function onRequestPost(context) {
       id: m.id,
       role: m.role,
       parts: (Array.isArray(m.parts) ? m.parts : [])
-        .filter(p => p && p.type === 'text' && p.text && String(p.text).trim())
-        .map(p => ({
-          type: 'text',
-          text: String(p.text).slice(0, m.role === 'user' ? MAX_USER_INPUT : 4000),
-        })),
+        .filter(p => p && (
+          (p.type === 'text' && p.text && String(p.text).trim()) ||
+          (typeof p.type === 'string' && p.type.startsWith('tool-') && p.state === 'output-available' && p.output != null && p.toolCallId)
+        ))
+        .map(p => p.type === 'text'
+          ? { type: 'text', text: String(p.text).slice(0, m.role === 'user' ? MAX_USER_INPUT : 4000) }
+          : slimToolPart(p)),
     }))
     .filter(m => m.parts.length);
 
@@ -391,6 +488,24 @@ export async function onRequestPost(context) {
     },
   });
 
+  // ===== 详情工具：按 id 查单条详情（追问场景，如「那第一部讲什么」「评分多少」） =====
+  const getItemById = tool({
+    description: '根据条目 id 获取单条详情（标题、日期、评分、类型、简介）。用户在看到推荐结果后追问「这部讲什么」「第一部的评分/年份/详细介绍」「展开说说某一条」时调用本工具，id 来自 searchItems 或 getFavorites 返回结果里的 id 字段。查不到返回 null。',
+    inputSchema: z.object({
+      id: z.string().describe('条目 id，来自之前工具返回结果中的 id 字段（如 tmdb-movie-123、news-xxx）'),
+    }),
+    execute: async ({ id }) => {
+      try {
+        const item = await getItemByIdData(id, env, bodyItems);
+        if (!item) return null; // 查不到返回 null，模型会明说没有
+        return { ...item, typeLabel: TYPE_LABEL[item.type] || item.type || '条目' };
+      } catch (_) {
+        // 工具异常绝不冒泡导致整请求 500
+        return null;
+      }
+    },
+  });
+
   // ===== 流式生成 + UIMessage SSE（tools 双通道都挂，stopWhen 防 tool 死循环）=====
   const result = streamText({
     model,
@@ -399,7 +514,7 @@ export async function onRequestPost(context) {
     temperature: 0.7,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
-    tools: { searchItems, getFavorites },
+    tools: { searchItems, getFavorites, getItemById },
     stopWhen: stepCountIs(5),
   });
 

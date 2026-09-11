@@ -1202,6 +1202,20 @@ body {
 }
 .chat-chip:hover { background: #E8F2FE; }
 
+/* 参考条目 chips（assistant 消息 tool 结果的可点击回链） */
+.chat-refs {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 8px;
+}
+.chat-ref-chip {
+  border: 1px solid #FDE3C8; background: #FFFBF4;
+  color: #B36B00; border-radius: 14px;
+  padding: 4px 11px; font-size: 12px; cursor: pointer;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background .15s;
+}
+.chat-ref-chip:hover { background: #FFF2DF; }
+
 /* 错误条 */
 .chat-error {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;

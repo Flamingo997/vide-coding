@@ -71,6 +71,26 @@ async function boot() {
 
   const textOf = m => (m.parts || []).filter(p => p.type === 'text').map(p => p.text).join('\n');
 
+  // 从 assistant 消息的 tool parts 提取参考条目（searchItems/getFavorites 列表 + getItemById 单条），
+  // 用于渲染「参考了哪些条目」chips（AI SDK 7：type='tool-<name>'，state='output-available' 时有 output）
+  function refItemsOf(m) {
+    if (!m || m.role !== 'assistant' || !Array.isArray(m.parts)) return [];
+    const out = [];
+    for (const p of m.parts) {
+      if (typeof p.type !== 'string' || !p.type.startsWith('tool-')) continue;
+      if (p.state !== 'output-available' || !p.output || p.output == null) continue;
+      const o = p.output;
+      if (p.type === 'tool-searchItems' && Array.isArray(o.items)) {
+        out.push(...o.items.filter(x => x && x.title));
+      } else if (p.type === 'tool-getFavorites' && o.loggedIn && Array.isArray(o.favorites)) {
+        out.push(...o.favorites.filter(x => x && x.title));
+      } else if (p.type === 'tool-getItemById' && o.title) {
+        out.push(o);
+      }
+    }
+    return out;
+  }
+
   function loadHistory(key) {
     try {
       const arr = JSON.parse(localStorage.getItem(key) || '[]');
@@ -80,10 +100,20 @@ async function boot() {
 
   function saveHistory(key, msgs) {
     try {
+      // 保留文本 + 已完成的 tool parts（刷新后参考条目 chips 和服务端追问上下文都依赖它）
       const slim = (msgs || []).slice(-20).map(m => ({
         id: m.id,
         role: m.role,
-        parts: (m.parts || []).filter(p => p.type === 'text'),
+        parts: (m.parts || []).filter(p =>
+          p.type === 'text' ||
+          (typeof p.type === 'string' && p.type.startsWith('tool-') && p.state === 'output-available' && p.toolCallId)
+        ).map(p => p.type === 'text' ? p : {
+          type: p.type,
+          toolCallId: p.toolCallId,
+          state: 'output-available',
+          input: p.input,
+          output: p.output,
+        }),
       }));
       localStorage.setItem(key, JSON.stringify(slim));
     } catch (_) {}
@@ -210,6 +240,13 @@ async function boot() {
     const lastMsg = messages[messages.length - 1];
     const showDots = busy && (!lastMsg || lastMsg.role === 'user' || !textOf(lastMsg));
 
+    // 参考条目 chip 点击：外链（资讯原文）新窗口打开，站内链接（/?q=）当前页跳转
+    const openRef = useCallback(r => {
+      const u = String((r && r.url) || '');
+      if (u.startsWith('http')) window.open(u, '_blank', 'noopener');
+      else if (u) location.href = u;
+    }, []);
+
     const chips = station ? STATION_CHIPS : QUICK_CHIPS;
 
     return html`
@@ -238,11 +275,24 @@ async function boot() {
               </div>
             ` : null}
 
-            ${messages.map(m => html`
+            ${messages.map(m => {
+              const refs = m.role === 'assistant' ? refItemsOf(m).slice(0, 5) : [];
+              const txt = textOf(m);
+              return html`
               <div key=${m.id} class=${'chat-msg ' + (m.role === 'user' ? 'chat-msg-user' : 'chat-msg-ai')}>
-                <div class="chat-bubble">${textOf(m)}</div>
+                ${txt ? html`<div class="chat-bubble">${txt}</div>` : null}
+                ${refs.length ? html`
+                  <div class="chat-refs">
+                    ${refs.map(r => html`
+                      <button class="chat-ref-chip" key=${(r.id || '') + (r.title || '')} title=${r.title} onClick=${() => openRef(r)}>
+                        ${r.typeLabel ? r.typeLabel + ' · ' : ''}${r.title}
+                      </button>
+                    `)}
+                  </div>
+                ` : null}
               </div>
-            `)}
+            `;
+            })}
 
             ${showDots ? html`<div class="chat-msg chat-msg-ai"><div class="chat-bubble chat-dots"><i></i><i></i><i></i></div></div>` : null}
 
