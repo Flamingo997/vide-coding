@@ -193,6 +193,58 @@ function searchBodyItems(items, query, limit) {
   return out;
 }
 
+// ===== D1 收藏查询（复用 favorites.js 的会话校验逻辑） =====
+function getCookie(cookieHeader, name) {
+  if (!cookieHeader) return null;
+  const m = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return m ? m[1] : null;
+}
+
+async function verifySession(db, request) {
+  const token = getCookie(request.headers.get('Cookie'), 'session');
+  if (!token) return null;
+  const row = await db.prepare('SELECT user_id, expires_at FROM sessions WHERE token = ?').bind(token).first();
+  if (!row) return null;
+  if (Date.now() > row.expires_at) {
+    await db.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
+    return null;
+  }
+  return row.user_id;
+}
+
+const MAX_FAV_RETURN = 10; // getFavorites 返回条数上限（作业要求 limit ≤10）
+
+// 查当前登录用户的 D1 收藏（未登录返回提示文案，不抛错）
+async function getFavoritesData(db, request) {
+  try {
+    if (!db) return { loggedIn: false, note: '收藏服务暂不可用（数据库未绑定）' };
+    const userId = await verifySession(db, request);
+    if (!userId) return { loggedIn: false, note: '用户未登录，无法查询收藏' };
+    const results = await db
+      .prepare('SELECT item_id, item_data, saved_at FROM favorites WHERE user_id = ? ORDER BY saved_at DESC')
+      .bind(userId)
+      .all();
+    const favorites = (results.results || []).map(row => {
+      try {
+        const item = JSON.parse(row.item_data);
+        return {
+          id: item.id || row.item_id,
+          title: item.title || '',
+          type: item.type || '',
+          date: item.date || '',
+          savedAt: row.saved_at,
+        };
+      } catch (_) {
+        return null;
+      }
+    }).filter(x => x && x.title);
+    return { loggedIn: true, favorites, count: favorites.length };
+  } catch (_) {
+    // 收藏查询失败消化为提示，绝不 500
+    return { loggedIn: false, note: '收藏查询暂时失败' };
+  }
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
 
@@ -306,6 +358,39 @@ export async function onRequestPost(context) {
     },
   });
 
+  // ===== 收藏工具：查当前登录用户的 D1 收藏（策略B，个性化推荐数据源） =====
+  const getFavorites = tool({
+    description: '获取当前用户在本站的收藏列表（真实收藏数据，存于 D1 数据库）。用户问「我的收藏」「我标记过的片」「我收藏的有哪些」「根据我的收藏推荐」等问题时调用本工具。可选传关键词过滤收藏标题。未登录时返回提示，应引导用户先登录。',
+    inputSchema: z.object({
+      keyword: z.string().optional().describe('可选：按关键词过滤收藏标题（如类型词、片名片段）'),
+    }),
+    execute: async ({ keyword }) => {
+      try {
+        const data = await getFavoritesData(env.DB, request);
+        if (!data.loggedIn) {
+          return { loggedIn: false, note: data.note, hint: '引导用户登录后再查收藏' };
+        }
+        const kw = String(keyword || '').toLowerCase().trim();
+        let favorites = data.favorites;
+        if (kw) {
+          favorites = favorites.filter(f => String(f.title).toLowerCase().includes(kw) || String(f.type).toLowerCase().includes(kw));
+        }
+        return {
+          loggedIn: true,
+          count: favorites.length,
+          totalCount: data.count,
+          favorites: favorites.slice(0, MAX_FAV_RETURN).map(f => ({
+            ...f,
+            typeLabel: TYPE_LABEL[f.type] || f.type || '条目',
+          })),
+        };
+      } catch (_) {
+        // 工具异常绝不冒泡导致整请求 500
+        return { loggedIn: false, note: '收藏查询暂时失败', hint: '请稍后再试' };
+      }
+    },
+  });
+
   // ===== 流式生成 + UIMessage SSE（tools 双通道都挂，stopWhen 防 tool 死循环）=====
   const result = streamText({
     model,
@@ -314,7 +399,7 @@ export async function onRequestPost(context) {
     temperature: 0.7,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
-    tools: { searchItems },
+    tools: { searchItems, getFavorites },
     stopWhen: stepCountIs(5),
   });
 
