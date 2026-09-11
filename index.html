@@ -1729,6 +1729,7 @@
   // 策略A：全站助手发起请求时采集当前站条目（≤50 条短字段），供后端 searchItems 工具检索
   window.getStationItems = function () {
     try {
+      // 全量时间线条目交给助手（短字段约百条），「最近上映」按日期排序才不会漏掉数组后部的新片
       return (typeof NEWS !== 'undefined' && Array.isArray(NEWS) ? NEWS : [])
         .map(n => ({
           id: n.id || '',
@@ -1738,7 +1739,7 @@
           summary: String(n.summary || '').slice(0, 60),
         }))
         .filter(x => x.title)
-        .slice(0, 50);
+        .slice(0, 120);
     } catch (_) { return []; }
   };
   // ============ 全站 AI 助手 END ============
