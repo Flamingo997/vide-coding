@@ -285,20 +285,21 @@ async function searchNewsPool(query, limit) {
   }
 }
 
-// 策略A：前端当前页条目内检索
+// 策略A：前端当前页条目内检索（标题统一剥书名号，与浏览通道格式一致）
 function searchBodyItems(items, query, limit) {
   const q = String(query).toLowerCase().trim();
   const out = [];
   for (const it of items) {
-    const title = String(it.title || '');
+    const rawTitle = String(it.title || '');
+    const bareTitle = rawTitle.replace(/^《|》$/g, '');
     const summary = String(it.summary || '');
-    if (title.toLowerCase().includes(q) || summary.toLowerCase().includes(q)) {
+    if (bareTitle.toLowerCase().includes(q) || rawTitle.toLowerCase().includes(q) || summary.toLowerCase().includes(q)) {
       out.push({
         id: String(it.id || ''),
-        title,
+        title: bareTitle,
         type: String(it.type || ''),
         date: String(it.date || ''),
-        url: stationUrl(title),
+        url: stationUrl(bareTitle),
       });
       if (out.length >= limit) break;
     }
