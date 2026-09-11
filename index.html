@@ -1009,6 +1009,33 @@
     return 'tl-' + String(title || '').replace(/[\s"'<>\\\/&?#=%\[\].，,。！!？?；;：:（）()【】《》~·@$^*+\-|`]/g, '_');
   }
 
+  // ===== TMDB 关键词补位：本地时间线过滤为空时，调 /api/tmdb?q= 把片库结果注入 NEWS 后重渲染 =====
+  // 场景：全站 AI 助手 chips 点进来的条目可能不在首页 discover 池（每类仅8条）
+  let tmdbFallbackTimer = null;
+  let tmdbFallbackSeq = 0;
+  let tmdbFallbackTitles = null; // 懒初始化：脚本顶层执行时 NEWS 尚未在 Promise 中赋值
+  function scheduleTmdbFallback(container, kw, opt) {
+    clearTimeout(tmdbFallbackTimer);
+    const seq = ++tmdbFallbackSeq;
+    tmdbFallbackTimer = setTimeout(async () => {
+      try {
+        const r = await fetch('/api/tmdb?q=' + encodeURIComponent(kw));
+        const d = await r.json();
+        if (seq !== tmdbFallbackSeq) return; // 用户已继续输入，丢弃过期结果
+        tmdbFallbackTitles ||= new Set(NEWS.map(n => n.title)); // 首次补查时 NEWS 已就绪
+        const fresh = (d.data || []).filter(x => x && x.title && !tmdbFallbackTitles.has(x.title));
+        if (!fresh.length) {
+          container.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
+          return;
+        }
+        fresh.forEach(x => { tmdbFallbackTitles.add(x.title); NEWS.push(x); });
+        renderTimeline(container, opt); // 注入后走同一套过滤/分组/卡片渲染（含收藏按钮）
+      } catch (_) {
+        if (seq === tmdbFallbackSeq) container.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
+      }
+    }, 450);
+  }
+
   function renderTimeline(container, opt) {
     const { type = 'all', range = 'all', keyword: kw = '', limit = 0 } = opt;
     // ========== 第1步：过滤 + 为每条预计算时间戳（避免 sort 里重复解析） ==========
@@ -1059,8 +1086,14 @@
     }
 
     if (filtered.length === 0) {
-      container.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
       pendingScrollTitle = null;
+      // 关键词搜索（≥2字）本地池无结果 → 防抖向 TMDB 片库补查；纯类型/时间筛选为空则直接提示
+      if (kw && kw.length >= 2) {
+        container.innerHTML = '<div class="empty-tip">站内时间线没有，正在全网片库补查…</div>';
+        scheduleTmdbFallback(container, kw, opt);
+      } else {
+        container.innerHTML = '<div class="empty-tip">当前筛选条件下暂无资讯</div>';
+      }
       return;
     }
 

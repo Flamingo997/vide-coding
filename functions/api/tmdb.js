@@ -167,6 +167,82 @@ export async function onRequestGet(context) {
   }
 
   try {
+    // ===== 关键词搜索补位：?q=关键词 → search/multi，返回时间线卡片格式 =====
+    // 场景：全站 AI 助手 chips 点进来的条目可能不在首页 discover 数据池（每类仅取8条），
+    // 前端本地关键词过滤为空时调本分支补查；字段结构与主列表完全一致，可直接注入渲染
+    const reqUrl = new URL(context.request.url);
+    const searchQ = (reqUrl.searchParams.get('q') || '').trim();
+    if (searchQ) {
+      const [zh, en, mgRaw, tgRaw] = await Promise.all([
+        tmdb(`/search/multi?query=${encodeURIComponent(searchQ)}&page=1`, key, 'zh-CN'),
+        tmdb(`/search/multi?query=${encodeURIComponent(searchQ)}&page=1`, key, 'en-US'),
+        tmdb('/genre/movie/list', key, 'zh-CN'),
+        tmdb('/genre/tv/list', key, 'zh-CN'),
+      ]);
+      const mg = {}, tg = {};
+      (mgRaw.genres || []).forEach(g => { mg[g.id] = g.name; });
+      (tgRaw.genres || []).forEach(g => { tg[g.id] = g.name; });
+      const enMap = new Map((en.results || []).map(x => [x.media_type + '-' + x.id, x]));
+      const searchList = (zh.results || []).slice(0, 12).map(s => {
+        const isMovie = s.media_type === 'movie';
+        if (!isMovie && s.media_type !== 'tv') return null; // person/collection 等不要
+        const en = enMap.get(s.media_type + '-' + s.id) || {};
+        const posterPath = s.poster_path || en.poster_path;
+        if (!posterPath) return null; // 无海报的条目不进卡片
+        const gids = s.genre_ids || en.genre_ids || [];
+        const gMap = isMovie ? mg : tg;
+        let type;
+        if (isMovie) {
+          type = 'movie';
+          for (const id of gids) { if (MOVIE_GENRE_TYPE[id]) { type = MOVIE_GENRE_TYPE[id]; break; } }
+        } else {
+          type = 'drama';
+          for (const id of gids) { if (TV_GENRE_TYPE[id]) { type = TV_GENRE_TYPE[id]; break; } }
+        }
+        const genres = gids.map(id => gMap[id]).filter(Boolean).join(' / ');
+        const title = pickTitle(s, en, isMovie);
+        const date = isMovie ? (s.release_date || en.release_date || '') : (s.first_air_date || en.first_air_date || '');
+        if (!date || date < '2000-01-01') return null; // 搜索补位允许老片，但剔除无日期条目
+        const overview = pickOverview(s, en);
+        const voteAvg = s.vote_average || en.vote_average || 0;
+        const voteCount = s.vote_count || en.vote_count || 0;
+        const origLang = s.original_language || en.original_language || '';
+        const isZhOrigin = origLang === 'zh' || origLang === 'cn';
+        const isPast = new Date(date) < new Date();
+        return {
+          id: 'tmdb-' + (isMovie ? 'movie' : 'tv') + '-' + s.id,
+          date,
+          type,
+          event: isPast ? 'online' : 'schedule',
+          status: isPast ? 'done' : 'pending',
+          title: `《${title}》`,
+          summary: zhSummary(overview || title),
+          source: 'TMDB',
+          sourceLink: `https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${s.id}`,
+          poster: IMG + posterPath,
+          detail: {
+            intro: overview || '',
+            cast: genres || '暂无',
+            platform: voteCount ? `TMDB 评分：${voteAvg.toFixed(1)}（${voteCount} 人评价）` : 'TMDB 暂无评分',
+            ep: isZhOrigin ? (isMovie ? '华语影片' : '华语内容') : (isMovie ? '外语影片' : '海外内容'),
+          },
+        };
+      }).filter(Boolean);
+      return new Response(JSON.stringify({
+        code: 0,
+        message: 'ok',
+        total: searchList.length,
+        attribution: '数据来源 TMDB（themoviedb.org）',
+        data: searchList,
+      }), {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+        },
+      });
+    }
+
     // 双语言并行请求：zh-CN + en-US
     // 日期过滤：放宽到 2023-01-01 确保各分类至少8部内容
     const DATE_GTE = '2023-01-01';
