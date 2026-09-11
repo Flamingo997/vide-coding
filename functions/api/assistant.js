@@ -532,33 +532,42 @@ export async function onRequestPost(context) {
         '检索意图：latest=最近/最新/近期上映上新；popular=热门/好看/推荐/有什么可看（无具体目标地逛）；search=有明确片名、演员名或类型词。拿不准可省略由系统判别'
       ),
       query: z.string().optional().describe('intent=search 时必填：片名、演员名、类型词（如科幻/悬疑/喜剧）或主题词，尽量简短；latest/popular 时留空'),
+      exclude: z.array(z.string()).optional().describe('需要排除的片名列表：用户说「换几部/还有呢/别的」时，把上一轮已经推荐过的片名（不带书名号）传进来，本轮结果不会再包含它们'),
       limit: z.number().min(1).max(10).optional().default(5),
     }),
-    execute: async ({ intent, query, limit }) => {
+    execute: async ({ intent, query, exclude, limit }) => {
       try {
         const q = String(query || '').trim().slice(0, 30);
         const useIntent = detectIntent(intent, q);
+        // 排除集合（统一剥书名号）；各源扩量取数，过滤后再截 limit，保证排除后仍拿得满
+        const excl = new Set((Array.isArray(exclude) ? exclude : [])
+          .map(x => String(x || '').replace(/^《|》$/g, '').trim()).filter(Boolean));
+        const dropExcluded = list => list.filter(x => x && x.title && !excl.has(String(x.title).replace(/^《|》$/g, '').trim()));
+        const wantN = limit + excl.size;
 
         // ===== 浏览通道：不做关键词匹配，直接按时效/热度取站内时间线，TMDB 补位 =====
         if (useIntent === 'latest' || useIntent === 'popular') {
           if (!env.TMDB_API_KEY) {
-            const items = useIntent === 'latest' ? bodyLatest(bodyItems, limit) : bodyShuffle(bodyItems, limit);
-            return { intent: useIntent, count: items.length, items: items.map(x => ({ ...x, typeLabel: TYPE_LABEL[x.type] || x.type || '条目' })) };
+            const raw = useIntent === 'latest' ? bodyLatest(bodyItems, wantN) : bodyShuffle(bodyItems, wantN);
+            const items = dropExcluded(raw).slice(0, limit)
+              .map(x => ({ ...x, typeLabel: TYPE_LABEL[x.type] || x.type || '条目' }));
+            return { intent: useIntent, count: items.length, items };
           }
-          const bodyN = Math.min(limit, Math.max(3, Math.ceil(limit * 0.6))); // 站内时间线占六成，保证回答「站里的」内容
+          const bodyN = Math.min(wantN, Math.max(3, Math.ceil(wantN * 0.6))); // 站内时间线占六成，保证回答「站里的」内容
           const bodyPart = useIntent === 'latest' ? bodyLatest(bodyItems, bodyN) : bodyShuffle(bodyItems, bodyN);
           const tmdbPart = useIntent === 'latest'
-            ? await tmdbLatest(limit, env.TMDB_API_KEY)
-            : await tmdbTrending(limit, env.TMDB_API_KEY);
-          const merged = useIntent === 'latest'
-            ? mergeDedup(bodyPart, tmdbPart, limit).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
-            : mergeDedup(bodyPart, tmdbPart, limit);
+            ? await tmdbLatest(wantN, env.TMDB_API_KEY)
+            : await tmdbTrending(wantN, env.TMDB_API_KEY);
+          let merged = dropExcluded(mergeDedup(bodyPart, tmdbPart, wantN)).slice(0, limit);
+          if (useIntent === 'latest') {
+            merged = merged.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+          }
           return { intent: useIntent, count: merged.length, items: merged };
         }
 
         // ===== 关键词检索通道：类型词 → discover；否则三源并行文本匹配 =====
         if (!q) return { count: 0, items: [] };
-        const perSource = Math.max(4, limit);
+        const perSource = Math.max(4, wantN);
 
         // 类型词 → discover；否则文本搜索（并行三源）
         const genreHit = GENRE_ZH.find(g => q.includes(g.key));
@@ -574,8 +583,8 @@ export async function onRequestPost(context) {
           Promise.resolve(searchBodyItems(bodyItems, q, perSource)),
         ]);
 
-        // 合并去重（按标题）：当前页条目优先，其次 TMDB，最后资讯
-        const merged = mergeDedup([...bodyHits, ...tmdbHits], newsHits, limit);
+        // 合并去重（按标题）：当前页条目优先，其次 TMDB，最后资讯；再剔除 exclude
+        const merged = dropExcluded(mergeDedup([...bodyHits, ...tmdbHits], newsHits, wantN)).slice(0, limit);
         return { intent: 'search', count: merged.length, items: merged };
       } catch (_) {
         // 工具异常绝不冒泡导致整请求 500
