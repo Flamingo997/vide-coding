@@ -169,8 +169,10 @@ async function tmdbList(path, mediaType, limit, key) {
 }
 
 // 时效浏览「最近上映」：在映电影 + 待映电影 + 热播剧集，合并按日期倒序
+// 近 270 天窗口：now_playing 含长线在映的老片（可能是一年前上映），补位也要保证「最近」语义
 async function tmdbLatest(limit, key) {
   const per = Math.ceil(limit / 2) + 2;
+  const floor = new Date(Date.now() - 270 * 86400000).toISOString().slice(0, 10);
   const [now, upcoming, onAir] = await Promise.all([
     tmdbList('/movie/now_playing', 'movie', per, key),
     tmdbList('/movie/upcoming', 'movie', per, key),
@@ -178,6 +180,7 @@ async function tmdbLatest(limit, key) {
   ]);
   const seen = new Set();
   return [...now, ...upcoming, ...onAir]
+    .filter(x => x.date && x.date >= floor)
     .filter(x => { if (seen.has(x.id)) return false; seen.add(x.id); return true; })
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
@@ -525,6 +528,9 @@ export async function onRequestPost(context) {
   }
 
   // ===== 站内检索工具：模型运行时自主调用，数据全部来自本站（TMDB代理/新闻池/当前页条目）=====
+  // 请求级单次锁：弱模型有时一轮里换参数连调两次 searchItems，两批结果不同会让它自我否定、
+  // 拼出两段回答。第二次调用直接返回首次结果并指令其停手（getItemById/getFavorites 不受限）
+  let searchOnce = null;
   const searchItems = tool({
     description: '在本站条目（电影、电视剧、综艺、动漫、纪录片、短剧、影视资讯）中检索，返回匹配条目标题、类型、上映日期与站内链接。找片、查片、问最近上什么、问有什么好看的都调用本工具。',
     inputSchema: z.object({
@@ -537,6 +543,11 @@ export async function onRequestPost(context) {
     }),
     execute: async ({ intent, query, exclude, limit }) => {
       try {
+        // 单次锁：本轮已检索过则原样返回首次结果，杜绝换参数连调导致的两批结果+双段回答
+        if (searchOnce) {
+          return { ...searchOnce, note: '本轮已经检索过，以上 items 就是站内结果，请直接据此回答，不要再调用 searchItems' };
+        }
+        const seal = r => { searchOnce = r; return r; };
         const q = String(query || '').trim().slice(0, 30);
         const useIntent = detectIntent(intent, q);
         // 排除集合（统一剥书名号）；各源扩量取数，过滤后再截 limit，保证排除后仍拿得满
@@ -545,28 +556,25 @@ export async function onRequestPost(context) {
         const dropExcluded = list => list.filter(x => x && x.title && !excl.has(String(x.title).replace(/^《|》$/g, '').trim()));
         const wantN = limit + excl.size;
 
-        // ===== 浏览通道：不做关键词匹配，直接按时效/热度取站内时间线，TMDB 补位 =====
+        // ===== 浏览通道：不做关键词匹配，直接按时效/热度取站内时间线，TMDB 仅在站内条目不足时补位 =====
         if (useIntent === 'latest' || useIntent === 'popular') {
-          if (!env.TMDB_API_KEY) {
-            const raw = useIntent === 'latest' ? bodyLatest(bodyItems, wantN) : bodyShuffle(bodyItems, wantN);
-            const items = dropExcluded(raw).slice(0, limit)
-              .map(x => ({ ...x, typeLabel: TYPE_LABEL[x.type] || x.type || '条目' }));
-            return { intent: useIntent, count: items.length, items };
+          const bodyPart = useIntent === 'latest' ? bodyLatest(bodyItems, wantN) : bodyShuffle(bodyItems, wantN);
+          // 站内时间线足够就不再请求 TMDB（结果纯站内、省一跳）；不足才补
+          let tmdbPart = [];
+          if (bodyPart.length < limit && env.TMDB_API_KEY) {
+            tmdbPart = useIntent === 'latest'
+              ? await tmdbLatest(wantN, env.TMDB_API_KEY)
+              : await tmdbTrending(wantN, env.TMDB_API_KEY);
           }
-          const bodyN = Math.min(wantN, Math.max(3, Math.ceil(wantN * 0.6))); // 站内时间线占六成，保证回答「站里的」内容
-          const bodyPart = useIntent === 'latest' ? bodyLatest(bodyItems, bodyN) : bodyShuffle(bodyItems, bodyN);
-          const tmdbPart = useIntent === 'latest'
-            ? await tmdbLatest(wantN, env.TMDB_API_KEY)
-            : await tmdbTrending(wantN, env.TMDB_API_KEY);
           let merged = dropExcluded(mergeDedup(bodyPart, tmdbPart, wantN)).slice(0, limit);
           if (useIntent === 'latest') {
             merged = merged.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
           }
-          return { intent: useIntent, count: merged.length, items: merged };
+          return seal({ intent: useIntent, count: merged.length, items: merged });
         }
 
         // ===== 关键词检索通道：类型词 → discover；否则三源并行文本匹配 =====
-        if (!q) return { count: 0, items: [] };
+        if (!q) return seal({ count: 0, items: [] });
         const perSource = Math.max(4, wantN);
 
         // 类型词 → discover；否则文本搜索（并行三源）
@@ -585,7 +593,7 @@ export async function onRequestPost(context) {
 
         // 合并去重（按标题）：当前页条目优先，其次 TMDB，最后资讯；再剔除 exclude
         const merged = dropExcluded(mergeDedup([...bodyHits, ...tmdbHits], newsHits, wantN)).slice(0, limit);
-        return { intent: 'search', count: merged.length, items: merged };
+        return seal({ intent: 'search', count: merged.length, items: merged });
       } catch (_) {
         // 工具异常绝不冒泡导致整请求 500
         return { count: 0, items: [], error: '检索暂时不可用' };
