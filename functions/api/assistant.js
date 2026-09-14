@@ -772,8 +772,11 @@ export async function onRequestPost(context) {
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
     tools: { searchItems, getFavorites, getItemById },
-    // 历史被空结果污染时强制先重新检索（防止模型照搬历史结论零工具调用）
-    ...(forceFreshSearch ? { toolChoice: { type: 'tool', toolName: 'searchItems' } } : {}),
+    // 历史被空结果污染时只在「第一步」强制重新检索（全局 toolChoice 会连后续步也锁死，
+    // 模型拿完结果无法进入文本回答步；prepareStep 按步覆盖，stepNumber 0=首轮）
+    prepareStep: ({ stepNumber }) => (forceFreshSearch && stepNumber === 0)
+      ? { toolChoice: { type: 'tool', toolName: 'searchItems' } }
+      : undefined,
     stopWhen: stepCountIs(5),
   });
 
