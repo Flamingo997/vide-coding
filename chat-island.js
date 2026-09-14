@@ -212,13 +212,15 @@ async function boot() {
       body: station
         ? {}
         : { url: article.url, title: article.title, source: article.source, text: article.text, search: !!autoQuestion },
-      prepareSendMessagesRequest: async ({ body: base }) => {
-        if (!station) return { body: base };
+      prepareSendMessagesRequest: async ({ messages, body: base }) => {
+        // AI SDK v7：钩子一旦返回 body 就会整体替换默认请求体（默认的 messages 不再自动合并），
+        // 所以两个分支都必须把 messages 自己放回去
+        if (!station) return { body: { ...(base || {}), messages } };
         let items = [];
         try {
           if (typeof window !== 'undefined' && window.getStationItems) items = await window.getStationItems();
         } catch (_) { items = []; }
-        return { body: { ...base, items: Array.isArray(items) ? items : [] } };
+        return { body: { ...(base || {}), messages, items: Array.isArray(items) ? items : [] } };
       },
     }), [station, article ? article.url : null, autoQuestion]);
 
