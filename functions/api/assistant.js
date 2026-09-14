@@ -276,16 +276,25 @@ function bodyShuffle(items, limit) {
   return pool.slice(0, limit);
 }
 
-// 合并两组并按标题去重（a 组优先），满 limit 即止
+// 合并两组并按标题去重（a 组优先），满 limit 即止。
+// 特例：a 组里的票房桩条目没有 id、只带票房摘要（查不到详情），同名 TMDB 富条目（tmdb- 前缀、
+// 可取完整简介）后到时替换桩条目——否则模型拿着空 id 调 getItemById 只能回复「查不到剧情」
 function mergeDedup(a, b, limit) {
-  const seen = new Set();
+  const indexByTitle = new Map();
   const out = [];
+  const decorate = x => ({ ...x, typeLabel: TYPE_LABEL[x.type] || x.type || '条目' });
+  const isRichDetail = x => String(x.id || '').startsWith('tmdb-');
   for (const x of [...a, ...b]) {
     const key = String(x.title || '').trim();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push({ ...x, typeLabel: TYPE_LABEL[x.type] || x.type || '条目' });
-    if (out.length >= limit) break;
+    if (!key) continue;
+    const pos = indexByTitle.get(key);
+    if (pos === undefined) {
+      if (out.length >= limit) { indexByTitle.set(key, -1); continue; }
+      indexByTitle.set(key, out.length);
+      out.push(decorate(x));
+    } else if (pos >= 0 && !String(out[pos].id || '') && isRichDetail(x)) {
+      out[pos] = decorate(x);
+    }
   }
   return out;
 }
@@ -298,9 +307,12 @@ const QUERY_SUFFIXES = [
   '讲的是什么', '讲了什么', '讲的啥', '讲什么', '讲啥', '说了什么', '是什么电影', '是什么剧',
   '是什么', '是啥', '剧情简介', '剧情介绍', '故事情节', '内容简介', '故事梗概', '讲的故事',
   '好看吗', '值得看吗', '好不好看', '怎么样', '咋样', '如何', '这部片子', '这部电影', '这部片', '这部剧', '这部',
-  '剧情', '简介', '的电影', '的影片', '的电视剧', '的纪录片', '的综艺', '的动漫', '的动画', '的短剧', '的片子',
+  '剧情', '简介', '详细介绍', '介绍', '详情', '资料',
+  '的电影', '的影片', '的电视剧', '的纪录片', '的综艺', '的动漫', '的动画', '的短剧', '的片子',
   '电影', '影片', '电视剧', '纪录片', '综艺', '动漫', '动画', '短剧',
-  '的吗', '好吗', '行吗', '吗', '呢', '啊', '吧', '呀', '么',
+  // 虚词「的」放最后：剥完「简介/剧情」等尾词后常残留（「早春晴朗的简介」→「早春晴朗的」→「早春晴朗」），
+  // 片名不会以「的」结尾，剥掉安全（条件：至少还剩 1 字）
+  '的吗', '好吗', '行吗', '吗', '呢', '啊', '吧', '呀', '么', '的',
 ];
 function cleanSearchQuery(raw) {
   // 只去结尾疑问/叹号，保留片名内部标点（：·— 等，删了会搜不到）
