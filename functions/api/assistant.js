@@ -301,7 +301,14 @@ function mergeDedup(a, b, limit) {
 
 // ===== query 清洗：弱模型有时把整句口语当 query（如「请你告诉我奥德赛讲了什么」），
 // 整句发给 TMDB 文本搜索必然落空。服务端统一剥掉客套前缀/疑问尾巴，只留核心检索词 =====
-const QUERY_PREFIX_RE = /^(请你?|麻烦你?|你好|您好|想问(一下|下|问)?|想知道|想看看?|帮我|帮忙|给我|请问)?(告诉我|跟我说说|说说|聊(聊)?|介绍(一下)?|讲讲?|说下?|搜(一|下)?索?|查一?查?|找一?找|找几部|推荐几部|推荐|找找)/;
+// 前缀两层（动词短语一律 ≥2 字，绝不匹配单字「说/讲/聊/找/查/搜」——真片名可能以这些字开头，
+// 如《找到你》《说唱新世代》，单字动词会把片名首字咬掉）：
+//   PREFIX = 「引导词+动词」的完整客套（如 请你告诉我/帮我查查/介绍一下）；
+//   LEAD   = 单独出现的纯引导词（如「请问X」——引导词命中但后面没接动词的形态）。
+//   LEAD 只收录不会成为片名开头的词（你好/给我 不收：《你好李焕英》《给我一支烟》是真片名开头）；
+//   2 轮循环让组合前缀可以接力剥（「跟我聊聊X」→第 1 轮剥「跟我」→第 2 轮剥「聊聊」）
+const QUERY_PREFIX_RE = /^(?:请你?|麻烦你?|你好|您好|想问(一下|下|问)?|想知道|想看看?|帮我|帮忙|给我|请问)?(?:告诉我|跟我说说|跟我|说说|聊聊|聊一下|介绍(一下)?|讲讲|讲一下|讲下|说下|说一下|搜索|搜一搜|搜一下|查查|查一查|查一下|找找|找一找|找一下|找几部|推荐几部|推荐)/;
+const QUERY_LEAD_RE = /^(?:请你|麻烦你|请问|帮我|帮忙|想知道|想问(一下|下|问)?|想看看?)/;
 // 顺序敏感：长尾巴在前（「讲的是什么」先于「是什么」）
 const QUERY_SUFFIXES = [
   '讲的是什么', '讲了什么', '讲的啥', '讲什么', '讲啥', '说了什么', '是什么电影', '是什么剧',
@@ -310,16 +317,17 @@ const QUERY_SUFFIXES = [
   '剧情', '简介', '详细介绍', '介绍', '详情', '资料',
   '的电影', '的影片', '的电视剧', '的纪录片', '的综艺', '的动漫', '的动画', '的短剧', '的片子',
   '电影', '影片', '电视剧', '纪录片', '综艺', '动漫', '动画', '短剧',
-  // 虚词「的」放最后：剥完「简介/剧情」等尾词后常残留（「早春晴朗的简介」→「早春晴朗的」→「早春晴朗」），
-  // 片名不会以「的」结尾，剥掉安全（条件：至少还剩 1 字）
-  '的吗', '好吗', '行吗', '吗', '呢', '啊', '吧', '呀', '么', '的',
+  '的吗', '好吗', '行吗', '吗', '呢', '啊', '吧', '呀', '么',
 ];
+// 剥书名号/引号包裹与结尾疑问叹号（保留片名内部标点：·—：等，删了会搜不到）
+const stripWraps = q => String(q).replace(/^[《「“"']+/, '').replace(/[》」”"']+[？?！!]*$/, '').replace(/[？?！!]+$/, '').trim();
 function cleanSearchQuery(raw) {
-  // 只去结尾疑问/叹号，保留片名内部标点（：·— 等，删了会搜不到）
-  let q = String(raw || '').trim().replace(/[？?！!]+$/g, '').slice(0, 30);
+  const rawStr = String(raw || '').trim().slice(0, 30);
+  let q = stripWraps(rawStr);
   for (let round = 0; round < 2 && q; round++) {
     const before = q;
-    q = q.replace(QUERY_PREFIX_RE, '');
+    q = q.replace(QUERY_PREFIX_RE, '').replace(QUERY_LEAD_RE, '');
+    let stripped = q !== before;
     let grown = true;
     while (grown && q) {
       grown = false;
@@ -328,12 +336,26 @@ function cleanSearchQuery(raw) {
         if (q.length > tail.length && q.endsWith(tail)) {
           q = q.slice(0, q.length - tail.length);
           grown = true;
+          stripped = true;
         }
       }
     }
+    // 「的」只在本轮确实剥掉过客套/尾词时才作为连接虚词剥掉（「早春晴朗的简介」→「早春晴朗」）。
+    // 无剥除时保留原样：真片名可能以「的」结尾（如《说唱听我的》），无条件剥会咬掉片名尾字
+    if (stripped && q.length > 1 && q.endsWith('的')) q = q.slice(0, -1);
     if (q === before) break;
   }
-  return q.trim();
+  q = stripWraps(q);
+  if (q) return q;
+  // 前缀全剥光（如 query 恰好是《搜索》这类与动词同形的片名）：退化为只剥尾词再试一次
+  const tailOnly = stripWraps(rawStr);
+  for (const tail of QUERY_SUFFIXES) {
+    if (tailOnly.length > tail.length && tailOnly.endsWith(tail)) {
+      const cut = stripWraps(tailOnly.slice(0, tailOnly.length - tail.length));
+      if (cut) return cut;
+    }
+  }
+  return '';
 }
 
 // ===== 浏览意图兜底判别：模型没显式传 intent 或把泛问题压成了无信息量 query 时，由代码纠偏 =====
@@ -655,9 +677,16 @@ export async function onRequestPost(context) {
         }
         const seal = r => { searchOnce = r; return r; };
         // 模型可能把整句口语塞进 query（「请你告诉我奥德赛讲了什么」），先服务端剥皮取核心词；
-        // 剥光（纯追问如「这部怎么样」）才回退原词
+        // 剥光（纯追问如「这部怎么样」）才回退原词。
+        // 旁路：模型直接传裸片名（含《》包裹）且精确命中站内条目时跳过清洗——
+        // 清洗是给口语剥皮用的，套在真片名上可能咬掉首字/尾词（如《找到你》被剥成「到你」）
         const rawQ = String(query || '').trim().slice(0, 30);
-        const q = cleanSearchQuery(rawQ) || rawQ;
+        const bareTitle = s => String(s || '').replace(/^[《「“"']+/, '').replace(/[》」”"'?？!！]+$/, '').trim();
+        const q = (() => {
+          const b = bareTitle(rawQ);
+          if (b && bodyItems.some(it => bareTitle(it.title) === b)) return b;
+          return cleanSearchQuery(rawQ) || rawQ;
+        })();
         const useIntent = detectIntent(intent, q);
         // 排除集合（统一剥书名号）；各源扩量取数，过滤后再截 limit，保证排除后仍拿得满
         const excl = new Set((Array.isArray(exclude) ? exclude : [])
