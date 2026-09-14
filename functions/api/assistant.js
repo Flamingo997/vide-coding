@@ -18,8 +18,24 @@ const DS_CACHE_MS = 60000;
 const MAX_MSGS = 20;          // 对话历史裁剪
 const MAX_USER_INPUT = 500;   // 单条用户输入截断
 const STREAM_TIMEOUT_MS = 45000;
-const TMDB_TIMEOUT_MS = 7000; // TMDB 检索超时（超时该源返回空，不阻塞工具）
+const TMDB_TIMEOUT_MS = 7000; // TMDB 单次请求超时（工具内部会重试一次，该源整体失败时不阻塞工具）
 const POOL_TIMEOUT_MS = 6000; // 新闻池构建超时（走 CF 边缘缓存，冷启动兜底）
+
+// TMDB GET 统一入口：cf 边缘缓存 1h（热门片名查询天然有暖缓存，抖动时大概率直接命中）
+// + 失败重试 1 次。抗 CF 边缘 → TMDB 的瞬时网络抖动，避免单次超时就让模型误判「站内没有」。
+// 返回 JSON 对象；两次都失败返回 null（调用方据此区分「真没结果」与「服务抖动」）。
+async function tmdbGetJson(url, timeoutMs = TMDB_TIMEOUT_MS) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, {
+        signal: AbortSignal.timeout(timeoutMs),
+        cf: { cacheTtl: 3600, cacheEverything: true },
+      });
+      if (r.ok) return await r.json();
+    } catch (_) {}
+  }
+  return null;
+}
 const MAX_BODY_ITEMS = 120;   // 策略A：前端携带条目上限（时间线全量约百条，短字段开销可接受）
 
 const TYPE_LABEL = { movie: '电影', drama: '电视剧', show: '综艺', anime: '动漫', doc: '纪录片', duan: '短剧', news: '影视资讯' };
@@ -91,50 +107,44 @@ function normTmdbItem(it, mediaType) {
   };
 }
 
-// TMDB 文本搜索（片名/人名/主题词）
+// TMDB 文本搜索（片名/人名/主题词）。返回 { items }；两次请求均失败返回 null（服务抖动，与空结果区分）
 async function tmdbTextSearch(query, limit, key) {
-  try {
-    const r = await fetch(
-      `https://api.themoviedb.org/3/search/multi?api_key=${key}&language=zh-CN&query=${encodeURIComponent(query)}&include_adult=false&page=1`,
-      { signal: AbortSignal.timeout(TMDB_TIMEOUT_MS) }
-    );
-    if (!r.ok) return [];
-    const j = await r.json();
-    const out = [];
-    for (const it of j.results || []) {
-      if (it.media_type !== 'movie' && it.media_type !== 'tv') continue;
-      const item = normTmdbItem(it, it.media_type);
-      if (item) out.push(item);
-      if (out.length >= limit) break;
-    }
-    return out;
-  } catch (_) {
-    return [];
+  const j = await tmdbGetJson(
+    `https://api.themoviedb.org/3/search/multi?api_key=${key}&language=zh-CN&query=${encodeURIComponent(query)}&include_adult=false&page=1`
+  );
+  if (!j) return null;
+  const out = [];
+  for (const it of j.results || []) {
+    if (it.media_type !== 'movie' && it.media_type !== 'tv') continue;
+    const item = normTmdbItem(it, it.media_type);
+    if (item) out.push(item);
+    if (out.length >= limit) break;
   }
+  return out;
 }
 
 // TMDB 类型发现（中文类型词 → discover，2023 年以来按热度）
+// 两源全部抖动失败返回 null（瞬态）；只要有一源成功即返回数组（可能为空）
 async function tmdbGenreDiscover(genre, limit, key) {
   const out = [];
   const want = Math.ceil(limit / 2);
   const tasks = [];
   if (genre.movie) {
-    tasks.push(fetch(
+    tasks.push(tmdbGetJson(
       `https://api.themoviedb.org/3/discover/movie?api_key=${key}&language=zh-CN&with_genres=${genre.movie}` +
-      `&sort_by=popularity.desc&primary_release_date.gte=2023-01-01&include_adult=false&page=1`,
-      { signal: AbortSignal.timeout(TMDB_TIMEOUT_MS) }
-    ).then(r => r.ok ? r.json() : null).then(j => ({ j, mediaType: 'movie' })).catch(() => null));
+      `&sort_by=popularity.desc&primary_release_date.gte=2023-01-01&include_adult=false&page=1`
+    ).then(j => ({ j, mediaType: 'movie' })));
   }
   if (genre.tv) {
     // 竖线 = OR（逗号是 AND 会查空）；剧集类型结果不足时用 18（剧情）兜底保证数量
     const tvGenre = genre.key === '综艺' ? '10764|10767' : `${genre.tv}|18`;
-    tasks.push(fetch(
+    tasks.push(tmdbGetJson(
       `https://api.themoviedb.org/3/discover/tv?api_key=${key}&language=zh-CN&with_genres=${tvGenre}` +
-      `&sort_by=popularity.desc&first_air_date.gte=2023-01-01&include_adult=false&page=1`,
-      { signal: AbortSignal.timeout(TMDB_TIMEOUT_MS) }
-    ).then(r => r.ok ? r.json() : null).then(j => ({ j, mediaType: 'tv' })).catch(() => null));
+      `&sort_by=popularity.desc&first_air_date.gte=2023-01-01&include_adult=false&page=1`
+    ).then(j => ({ j, mediaType: 'tv' })));
   }
   const results = await Promise.all(tasks);
+  if (results.length && results.every(r => !r?.j)) return null;
   for (const { j, mediaType } of results.filter(Boolean)) {
     for (const it of j?.results || []) {
       const item = normTmdbItem(it, mediaType);
@@ -146,26 +156,19 @@ async function tmdbGenreDiscover(genre, limit, key) {
 }
 
 // 通用 TMDB 列表端点（now_playing / upcoming / on_the_air / trending 均返回 {results}）
+// 浏览通道的补位源：失败返回 []（主源是站内时间线，不阻断）；统一入口自带重试+边缘缓存
 async function tmdbList(path, mediaType, limit, key) {
-  try {
-    const r = await fetch(
-      `https://api.themoviedb.org/3${path}?api_key=${key}&language=zh-CN&page=1`,
-      { signal: AbortSignal.timeout(TMDB_TIMEOUT_MS) }
-    );
-    if (!r.ok) return [];
-    const j = await r.json();
-    const out = [];
-    for (const it of j.results || []) {
-      // trending 端点自带 media_type；列表端点 media_type 由参数指定
-      const mt = it.media_type === 'movie' || it.media_type === 'tv' ? it.media_type : mediaType;
-      const item = normTmdbItem(it, mt);
-      if (item && item.date) out.push(item);
-      if (out.length >= limit) break;
-    }
-    return out;
-  } catch (_) {
-    return [];
+  const j = await tmdbGetJson(`https://api.themoviedb.org/3${path}?api_key=${key}&language=zh-CN&page=1`);
+  if (!j) return [];
+  const out = [];
+  for (const it of j.results || []) {
+    // trending 端点自带 media_type；列表端点 media_type 由参数指定
+    const mt = it.media_type === 'movie' || it.media_type === 'tv' ? it.media_type : mediaType;
+    const item = normTmdbItem(it, mt);
+    if (item && item.date) out.push(item);
+    if (out.length >= limit) break;
   }
+  return out;
 }
 
 // 时效浏览「最近上映」：在映电影 + 待映电影 + 热播剧集，合并按日期倒序
@@ -315,31 +318,25 @@ function searchBodyItems(items, query, limit) {
 // 其他 = 策略A body items 的原始 id（含空 id 兜底按标题跳站内搜索）
 const MAX_OVERVIEW = 200; // 详情简介截断（防超上下文）
 
-// TMDB 单条详情：标题/日期/评分/类型/简介
+// TMDB 单条详情：标题/日期/评分/类型/简介（统一入口重试+缓存；失败/查无均返回 null）
 async function tmdbDetail(tmdbId, mediaType, key) {
-  try {
-    const r = await fetch(
-      `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${key}&language=zh-CN`,
-      { signal: AbortSignal.timeout(TMDB_TIMEOUT_MS) }
-    );
-    if (!r.ok) return null;
-    const j = await r.json();
-    const title = mediaType === 'movie' ? (j.title || j.original_title) : (j.name || j.original_name);
-    if (!title) return null;
-    return {
-      id: `tmdb-${mediaType}-${tmdbId}`,
-      title,
-      type: mediaType === 'movie' ? 'movie' : 'drama',
-      date: mediaType === 'movie' ? (j.release_date || '') : (j.first_air_date || ''),
-      rating: j.vote_count ? Number((j.vote_average || 0).toFixed(1)) : null,
-      voteCount: j.vote_count || 0,
-      genres: (j.genres || []).map(g => g.name).filter(Boolean).join(' / '),
-      overview: String(j.overview || '').trim().slice(0, MAX_OVERVIEW),
-      url: stationUrl(title),
-    };
-  } catch (_) {
-    return null;
-  }
+  const j = await tmdbGetJson(
+    `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${key}&language=zh-CN`
+  );
+  if (!j) return null;
+  const title = mediaType === 'movie' ? (j.title || j.original_title) : (j.name || j.original_name);
+  if (!title) return null;
+  return {
+    id: `tmdb-${mediaType}-${tmdbId}`,
+    title,
+    type: mediaType === 'movie' ? 'movie' : 'drama',
+    date: mediaType === 'movie' ? (j.release_date || '') : (j.first_air_date || ''),
+    rating: j.vote_count ? Number((j.vote_average || 0).toFixed(1)) : null,
+    voteCount: j.vote_count || 0,
+    genres: (j.genres || []).map(g => g.name).filter(Boolean).join(' / '),
+    overview: String(j.overview || '').trim().slice(0, MAX_OVERVIEW),
+    url: stationUrl(title),
+  };
 }
 
 // 新闻池按 url 尾部匹配（searchNewsPool 生成的 id = 'news-' + url 后 32 字符）
@@ -591,8 +588,22 @@ export async function onRequestPost(context) {
           Promise.resolve(searchBodyItems(bodyItems, q, perSource)),
         ]);
 
+        // 片库源两次重试均失败（null）且站内两源（当前页条目/新闻池）也全空 → 瞬态失败：
+        // 不 seal（给模型同轮二次调用留重试机会，边缘缓存暖后第二次可能直接命中），
+        // 并明确禁止模型断言「站内没有/没收录」——没查到 ≠ 不存在
+        if (tmdbHits === null && bodyHits.length === 0 && newsHits.length === 0) {
+          return {
+            intent: 'search',
+            count: 0,
+            items: [],
+            transient: true,
+            note: '片库检索服务刚才超时失败，本次空结果不可信，绝不代表站内没有收录。请直接告知用户：片库查询刚才超时了，可以换个关键词（演员名/类型词）或稍后再问一次，也可以用首页搜索框直接搜「' + q + '」。禁止说「站内没有/没收录/片名记错」之类的话。',
+          };
+        }
+
         // 合并去重（按标题）：当前页条目优先，其次 TMDB，最后资讯；再剔除 exclude
-        const merged = dropExcluded(mergeDedup([...bodyHits, ...tmdbHits], newsHits, wantN)).slice(0, limit);
+        // tmdbHits 为 null（片库抖动）但站内其他源有命中时按空数组处理
+        const merged = dropExcluded(mergeDedup([...bodyHits, ...(tmdbHits || [])], newsHits, wantN)).slice(0, limit);
         return seal({ intent: 'search', count: merged.length, items: merged });
       } catch (_) {
         // 工具异常绝不冒泡导致整请求 500

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=20260914c">
+<link rel="stylesheet" href="styles.css?v=20260914d">
 </head>
 <body>
 
@@ -1678,7 +1678,7 @@
           root.innerHTML = '<div class="chat-overlay"><aside class="chat-drawer"><div class="chat-boot-msg">正在加载聊天组件…</div></aside></div>';
         }
         try {
-          await import('./chat-island.js?v=20260914c');
+          await import('./chat-island.js?v=20260914d');
         } catch (e) {
           console.error('[chat] island 模块加载失败', e);
           if (root) {
@@ -1712,7 +1712,7 @@
           root.innerHTML = '<div class="chat-overlay"><aside class="chat-drawer"><div class="chat-boot-msg">正在加载 AI 助手…</div></aside></div>';
         }
         try {
-          await import('./chat-island.js?v=20260914c');
+          await import('./chat-island.js?v=20260914d');
         } catch (e) {
           console.error('[chat] island 模块加载失败', e);
           if (root) {
@@ -1726,11 +1726,11 @@
     }
   };
 
-  // 策略A：全站助手发起请求时采集当前站条目（≤50 条短字段），供后端 searchItems 工具检索
+  // 策略A：全站助手发起请求时采集当前站条目（≤120 条短字段），供后端 searchItems 工具检索
   window.getStationItems = function () {
     try {
       // 全量时间线条目交给助手（短字段约百条），「最近上映」按日期排序才不会漏掉数组后部的新片
-      return (typeof NEWS !== 'undefined' && Array.isArray(NEWS) ? NEWS : [])
+      const newsItems = (typeof NEWS !== 'undefined' && Array.isArray(NEWS) ? NEWS : [])
         .map(n => ({
           id: n.id || '',
           title: n.title || '',
@@ -1738,8 +1738,14 @@
           date: n.date || '',
           summary: String(n.summary || '').slice(0, 60),
         }))
-        .filter(x => x.title)
-        .slice(0, 120);
+        .filter(x => x.title);
+      // 合并猫眼实时票房榜（首页边栏在映片），按片名（剥书名号）去重，NEWS 已有的不重复发
+      const stripName = t => String(t || '').replace(/^《|》$/g, '').trim();
+      const seen = new Set(newsItems.map(x => stripName(x.title)));
+      const boxItems = (Array.isArray(window.__boxOfficeItems) ? window.__boxOfficeItems : [])
+        .filter(x => x.title && !seen.has(stripName(x.title)))
+        .map(x => ({ ...x, summary: String(x.summary || '').slice(0, 60) }));
+      return newsItems.concat(boxItems).slice(0, 120);
     } catch (_) { return []; }
   };
   // ============ 全站 AI 助手 END ============
@@ -2007,6 +2013,21 @@
         if (!data || data.code !== 0 || !data.movies || !data.movies.length) return;
 
         const movies = data.movies;
+        // 票房榜同步给全站 AI 助手（策略A 条目源）：首页边栏明明展示着的在映片，助手不能「看不见」
+        // 取前 10 名（页面渲染 5 名），与 NEWS 同片名时复用其 id/date，避免详情追问断链
+        try {
+          window.__boxOfficeItems = movies.slice(0, 10).map(m => {
+            const nm = NEWS.find(n => n.title.includes(m.name));
+            return {
+              id: nm ? (nm.id || '') : '',
+              title: m.name,
+              type: 'movie',
+              date: (nm && nm.date) || '',
+              summary: '猫眼专业版实时票房榜第' + (m.rank || '') + '名 · 今日票房 ' + (m.boxDesc || '') +
+                (m.releaseInfo ? ' · ' + m.releaseInfo : ''),
+            };
+          }).filter(x => x.title);
+        } catch (_) { window.__boxOfficeItems = []; }
         // 渲染票房榜
         document.getElementById('boxOffice').innerHTML = movies.slice(0, 5).map((m, i) => {
           // 海报优先级：API 的 TMDB 补全 > NEWS 本地匹配 > 默认海报
