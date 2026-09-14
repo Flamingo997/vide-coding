@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=20260914d">
+<link rel="stylesheet" href="styles.css?v=20260914e">
 </head>
 <body>
 
@@ -1678,7 +1678,7 @@
           root.innerHTML = '<div class="chat-overlay"><aside class="chat-drawer"><div class="chat-boot-msg">正在加载聊天组件…</div></aside></div>';
         }
         try {
-          await import('./chat-island.js?v=20260914d');
+          await import('./chat-island.js?v=20260914e');
         } catch (e) {
           console.error('[chat] island 模块加载失败', e);
           if (root) {
@@ -1712,7 +1712,7 @@
           root.innerHTML = '<div class="chat-overlay"><aside class="chat-drawer"><div class="chat-boot-msg">正在加载 AI 助手…</div></aside></div>';
         }
         try {
-          await import('./chat-island.js?v=20260914d');
+          await import('./chat-island.js?v=20260914e');
         } catch (e) {
           console.error('[chat] island 模块加载失败', e);
           if (root) {
@@ -1726,9 +1726,25 @@
     }
   };
 
-  // 策略A：全站助手发起请求时采集当前站条目（≤120 条短字段），供后端 searchItems 工具检索
-  window.getStationItems = function () {
+  // 策略A：全站助手每次发送时采集当前站条目（≤120 条短字段），供后端 searchItems 工具检索。
+  // async：等待启动时即已发起的票房 promise（2.5s 上限），保证发问瞬间票房榜也能被采到
+  window.getStationItems = async function () {
     try {
+      // 票房条目：边栏已渲染直接用；否则等提前发起的 promise（NEWS 此时必然就绪，可安全映射）
+      let boxItems = [];
+      try {
+        if (Array.isArray(window.__boxOfficeItems) && window.__boxOfficeItems.length) {
+          boxItems = window.__boxOfficeItems;
+        } else if (window.__boxOfficePromise) {
+          const timer = new Promise(res => setTimeout(() => res(null), 2500));
+          const data = await Promise.race([window.__boxOfficePromise, timer]);
+          if (data && data.code === 0 && Array.isArray(data.movies)) {
+            boxItems = mapBoxOfficeItems(data.movies);
+            window.__boxOfficeItems = boxItems;
+          }
+        }
+      } catch (_) { boxItems = []; }
+
       // 全量时间线条目交给助手（短字段约百条），「最近上映」按日期排序才不会漏掉数组后部的新片
       const newsItems = (typeof NEWS !== 'undefined' && Array.isArray(NEWS) ? NEWS : [])
         .map(n => ({
@@ -1742,10 +1758,10 @@
       // 合并猫眼实时票房榜（首页边栏在映片），按片名（剥书名号）去重，NEWS 已有的不重复发
       const stripName = t => String(t || '').replace(/^《|》$/g, '').trim();
       const seen = new Set(newsItems.map(x => stripName(x.title)));
-      const boxItems = (Array.isArray(window.__boxOfficeItems) ? window.__boxOfficeItems : [])
+      const boxDedup = boxItems
         .filter(x => x.title && !seen.has(stripName(x.title)))
         .map(x => ({ ...x, summary: String(x.summary || '').slice(0, 60) }));
-      return newsItems.concat(boxItems).slice(0, 120);
+      return newsItems.concat(boxDedup).slice(0, 120);
     } catch (_) { return []; }
   };
   // ============ 全站 AI 助手 END ============
@@ -1972,6 +1988,29 @@
   }
 
   // ============ 首页边栏：票房榜 + 大盘 + 资讯（猫眼专业版实时数据） ============
+  // 票房请求尽早发起（不依赖 data.json/TMDB，与其并行），边栏渲染与全站助手采集共用同一 promise，
+  // 避免「页面已经展示着票房片、助手发问时条目还没到」
+  window.__boxOfficeItems = [];
+  window.__boxOfficePromise = fetch('/api/maoyan')
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
+  // 票房影片 → 助手条目（与 NEWS 同片名时复用 id/date，避免详情追问断链）
+  function mapBoxOfficeItems(movies) {
+    try {
+      return (movies || []).slice(0, 10).map(m => {
+        const nm = (typeof NEWS !== 'undefined' && Array.isArray(NEWS)) ? NEWS.find(n => n.title.includes(m.name)) : null;
+        return {
+          id: nm ? (nm.id || '') : '',
+          title: m.name,
+          type: 'movie',
+          date: (nm && nm.date) || '',
+          summary: '猫眼专业版实时票房榜第' + (m.rank || '') + '名 · 今日票房 ' + (m.boxDesc || '') +
+            (m.releaseInfo ? ' · ' + m.releaseInfo : ''),
+        };
+      }).filter(x => x.title);
+    } catch (_) { return []; }
+  }
+
   function renderSidebar() {
     // 先用 NEWS 里的电影数据做兜底渲染
     const fallbackMovies = NEWS.filter(n => n.type === 'movie' && n.event === 'online')
@@ -2006,28 +2045,13 @@
     document.getElementById('marketNum').textContent = (fbSum * 2.6 / 10000).toFixed(2) + ' 亿';
     document.getElementById('marketMeta').textContent = '数据加载中… · 数据来源：猫眼专业版';
 
-    // 异步请求猫眼专业版实时票房
-    fetch('/api/maoyan')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+    // 消费脚本启动时即已发起的猫眼票房请求（边栏渲染与 AI 助手采集共用）
+    window.__boxOfficePromise.then(data => {
         if (!data || data.code !== 0 || !data.movies || !data.movies.length) return;
 
         const movies = data.movies;
         // 票房榜同步给全站 AI 助手（策略A 条目源）：首页边栏明明展示着的在映片，助手不能「看不见」
-        // 取前 10 名（页面渲染 5 名），与 NEWS 同片名时复用其 id/date，避免详情追问断链
-        try {
-          window.__boxOfficeItems = movies.slice(0, 10).map(m => {
-            const nm = NEWS.find(n => n.title.includes(m.name));
-            return {
-              id: nm ? (nm.id || '') : '',
-              title: m.name,
-              type: 'movie',
-              date: (nm && nm.date) || '',
-              summary: '猫眼专业版实时票房榜第' + (m.rank || '') + '名 · 今日票房 ' + (m.boxDesc || '') +
-                (m.releaseInfo ? ' · ' + m.releaseInfo : ''),
-            };
-          }).filter(x => x.title);
-        } catch (_) { window.__boxOfficeItems = []; }
+        window.__boxOfficeItems = mapBoxOfficeItems(movies);
         // 渲染票房榜
         document.getElementById('boxOffice').innerHTML = movies.slice(0, 5).map((m, i) => {
           // 海报优先级：API 的 TMDB 补全 > NEWS 本地匹配 > 默认海报

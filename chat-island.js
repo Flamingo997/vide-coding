@@ -203,13 +203,23 @@ async function boot() {
     const [input, setInput] = useState('');
     const listRef = useRef(null);
 
-    // 全站模式：策略A——挂载时采集当前页条目（≤50，短字段）供后端工具检索；
+    // 全站模式：策略A——每次「发送时」才实时采集当前页条目（getStationItems 为 async，会等待票房数据）。
+    // 不能用 transport 构造时的 body 快照：票房请求可能晚于抽屉挂载到达，快照里缺片会导致
+    // 首页边栏明明在映的片，助手整轮会话都「看不见」。
     // 文章模式：autoQuestion（深挖chip）标记 search=true，后端首条直接联网搜索
     const transport = useMemo(() => new DefaultChatTransport({
       api: station ? '/api/assistant' : '/api/news-chat',
       body: station
-        ? { items: (typeof window !== 'undefined' && window.getStationItems) ? window.getStationItems() : [] }
+        ? {}
         : { url: article.url, title: article.title, source: article.source, text: article.text, search: !!autoQuestion },
+      prepareSendMessagesRequest: async ({ body: base }) => {
+        if (!station) return { body: base };
+        let items = [];
+        try {
+          if (typeof window !== 'undefined' && window.getStationItems) items = await window.getStationItems();
+        } catch (_) { items = []; }
+        return { body: { ...base, items: Array.isArray(items) ? items : [] } };
+      },
     }), [station, article ? article.url : null, autoQuestion]);
 
     const persist = useCallback(msgs => saveHistory(storageKey, msgs), [storageKey]);

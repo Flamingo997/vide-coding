@@ -21,21 +21,41 @@ const STREAM_TIMEOUT_MS = 45000;
 const TMDB_TIMEOUT_MS = 7000; // TMDB 单次请求超时（工具内部会重试一次，该源整体失败时不阻塞工具）
 const POOL_TIMEOUT_MS = 6000; // 新闻池构建超时（走 CF 边缘缓存，冷启动兜底）
 
-// TMDB GET 统一入口：cf 边缘缓存 1h（热门片名查询天然有暖缓存，抖动时大概率直接命中）
-// + 失败重试 1 次。抗 CF 边缘 → TMDB 的瞬时网络抖动，避免单次超时就让模型误判「站内没有」。
-// 返回 JSON 对象；两次都失败返回 null（调用方据此区分「真没结果」与「服务抖动」）。
-async function tmdbGetJson(url, timeoutMs = TMDB_TIMEOUT_MS) {
+// TMDB GET 统一入口：失败重试 1 次 + isolate 内存缓存（默认 30min）。
+// 关键：只缓存 cacheIf 谓词通过（业务非空）的响应——TMDB 搜索后端偶发返回 200+空 results，
+// 这种「假空」绝不能被缓存（之前用 cf.cacheEverything 会把空结果钉在边缘节点 1 小时，
+// 导致该节点用户稳定「搜啥都没有」）。两次请求都失败返回 null，调用方据此区分瞬态与真空。
+const TMDB_MEM_TTL = 30 * 60000;
+const TMDB_MEM_MAX = 200;
+const tmdbMem = new Map(); // url -> { at, json }
+function tmdbMemGet(url) {
+  const hit = tmdbMem.get(url);
+  if (hit && Date.now() - hit.at < TMDB_MEM_TTL) return hit.json;
+  if (hit) tmdbMem.delete(url);
+  return undefined;
+}
+function tmdbMemSet(url, json) {
+  if (tmdbMem.size >= TMDB_MEM_MAX) tmdbMem.delete(tmdbMem.keys().next().value);
+  tmdbMem.set(url, { at: Date.now(), json });
+}
+async function tmdbGetJson(url, opts = {}) {
+  const timeoutMs = opts.timeoutMs || TMDB_TIMEOUT_MS;
+  const cacheIf = opts.cacheIf || null;
+  const cached = tmdbMemGet(url);
+  if (cached !== undefined) return cached;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await fetch(url, {
-        signal: AbortSignal.timeout(timeoutMs),
-        cf: { cacheTtl: 3600, cacheEverything: true },
-      });
-      if (r.ok) return await r.json();
+      const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (r.ok) {
+        const j = await r.json();
+        if (!cacheIf || cacheIf(j)) tmdbMemSet(url, j);
+        return j;
+      }
     } catch (_) {}
   }
   return null;
 }
+const tmdbNonEmpty = j => Array.isArray(j?.results) && j.results.length > 0;
 const MAX_BODY_ITEMS = 120;   // 策略A：前端携带条目上限（时间线全量约百条，短字段开销可接受）
 
 const TYPE_LABEL = { movie: '电影', drama: '电视剧', show: '综艺', anime: '动漫', doc: '纪录片', duan: '短剧', news: '影视资讯' };
@@ -107,20 +127,38 @@ function normTmdbItem(it, mediaType) {
   };
 }
 
-// TMDB 文本搜索（片名/人名/主题词）。返回 { items }；两次请求均失败返回 null（服务抖动，与空结果区分）
+// TMDB 文本搜索（片名/人名/主题词）：multi/movie/tv 三端点并行冗余。
+// 背景：单一 multi 端点偶发「200+空 results」或超时，一个端点抽风不该让整部片「消失」。
+// 语义：任一端点有命中 → 合并按 tmdb id 去重（multi 相关性排序在前）；
+//      三端点全部成功但全空 → []（真空）；只要有端点请求失败且整体无命中 → null（证据不足=瞬态）
 async function tmdbTextSearch(query, limit, key) {
-  const j = await tmdbGetJson(
-    `https://api.themoviedb.org/3/search/multi?api_key=${key}&language=zh-CN&query=${encodeURIComponent(query)}&include_adult=false&page=1`
-  );
-  if (!j) return null;
+  const enc = encodeURIComponent(query);
+  const base = `api_key=${key}&language=zh-CN&query=${enc}&include_adult=false&page=1`;
+  const opt = { cacheIf: tmdbNonEmpty };
+  const [multiJ, movieJ, tvJ] = await Promise.all([
+    tmdbGetJson(`https://api.themoviedb.org/3/search/multi?${base}`, opt),
+    tmdbGetJson(`https://api.themoviedb.org/3/search/movie?${base}`, opt),
+    tmdbGetJson(`https://api.themoviedb.org/3/search/tv?${base}`, opt),
+  ]);
+  if (multiJ === null && movieJ === null && tvJ === null) return null;
+
   const out = [];
-  for (const it of j.results || []) {
-    if (it.media_type !== 'movie' && it.media_type !== 'tv') continue;
-    const item = normTmdbItem(it, it.media_type);
-    if (item) out.push(item);
-    if (out.length >= limit) break;
+  const seen = new Set();
+  const push = (it, mediaType) => {
+    const item = normTmdbItem(it, mediaType);
+    if (item && !seen.has(item.id)) {
+      seen.add(item.id);
+      out.push(item);
+    }
+  };
+  for (const it of multiJ?.results || []) {
+    if (it.media_type === 'movie' || it.media_type === 'tv') push(it, it.media_type);
   }
-  return out;
+  for (const it of movieJ?.results || []) push(it, 'movie');
+  for (const it of tvJ?.results || []) push(it, 'tv');
+
+  if (!out.length && (multiJ === null || movieJ === null || tvJ === null)) return null;
+  return out.slice(0, limit);
 }
 
 // TMDB 类型发现（中文类型词 → discover，2023 年以来按热度）
@@ -132,7 +170,8 @@ async function tmdbGenreDiscover(genre, limit, key) {
   if (genre.movie) {
     tasks.push(tmdbGetJson(
       `https://api.themoviedb.org/3/discover/movie?api_key=${key}&language=zh-CN&with_genres=${genre.movie}` +
-      `&sort_by=popularity.desc&primary_release_date.gte=2023-01-01&include_adult=false&page=1`
+      `&sort_by=popularity.desc&primary_release_date.gte=2023-01-01&include_adult=false&page=1`,
+      { cacheIf: tmdbNonEmpty }
     ).then(j => ({ j, mediaType: 'movie' })));
   }
   if (genre.tv) {
@@ -140,7 +179,8 @@ async function tmdbGenreDiscover(genre, limit, key) {
     const tvGenre = genre.key === '综艺' ? '10764|10767' : `${genre.tv}|18`;
     tasks.push(tmdbGetJson(
       `https://api.themoviedb.org/3/discover/tv?api_key=${key}&language=zh-CN&with_genres=${tvGenre}` +
-      `&sort_by=popularity.desc&first_air_date.gte=2023-01-01&include_adult=false&page=1`
+      `&sort_by=popularity.desc&first_air_date.gte=2023-01-01&include_adult=false&page=1`,
+      { cacheIf: tmdbNonEmpty }
     ).then(j => ({ j, mediaType: 'tv' })));
   }
   const results = await Promise.all(tasks);
@@ -156,9 +196,12 @@ async function tmdbGenreDiscover(genre, limit, key) {
 }
 
 // 通用 TMDB 列表端点（now_playing / upcoming / on_the_air / trending 均返回 {results}）
-// 浏览通道的补位源：失败返回 []（主源是站内时间线，不阻断）；统一入口自带重试+边缘缓存
+// 浏览通道的补位源：失败返回 []（主源是站内时间线，不阻断）；统一入口自带重试+内存缓存
 async function tmdbList(path, mediaType, limit, key) {
-  const j = await tmdbGetJson(`https://api.themoviedb.org/3${path}?api_key=${key}&language=zh-CN&page=1`);
+  const j = await tmdbGetJson(
+    `https://api.themoviedb.org/3${path}?api_key=${key}&language=zh-CN&page=1`,
+    { cacheIf: tmdbNonEmpty }
+  );
   if (!j) return [];
   const out = [];
   for (const it of j.results || []) {
@@ -247,6 +290,40 @@ function mergeDedup(a, b, limit) {
   return out;
 }
 
+// ===== query 清洗：弱模型有时把整句口语当 query（如「请你告诉我奥德赛讲了什么」），
+// 整句发给 TMDB 文本搜索必然落空。服务端统一剥掉客套前缀/疑问尾巴，只留核心检索词 =====
+const QUERY_PREFIX_RE = /^(请你?|麻烦你?|你好|您好|想问(一下|下|问)?|想知道|想看看?|帮我|帮忙|给我|请问)?(告诉我|跟我说说|说说|聊(聊)?|介绍(一下)?|讲讲?|说下?|搜(一|下)?索?|查一?查?|找一?找|找几部|推荐几部|推荐|找找)/;
+// 顺序敏感：长尾巴在前（「讲的是什么」先于「是什么」）
+const QUERY_SUFFIXES = [
+  '讲的是什么', '讲了什么', '讲的啥', '讲什么', '讲啥', '说了什么', '是什么电影', '是什么剧',
+  '是什么', '是啥', '剧情简介', '剧情介绍', '故事情节', '内容简介', '故事梗概', '讲的故事',
+  '好看吗', '值得看吗', '好不好看', '怎么样', '咋样', '如何', '这部片子', '这部电影', '这部片', '这部剧', '这部',
+  '剧情', '简介', '的电影', '的影片', '的电视剧', '的纪录片', '的综艺', '的动漫', '的动画', '的短剧', '的片子',
+  '电影', '影片', '电视剧', '纪录片', '综艺', '动漫', '动画', '短剧',
+  '的吗', '好吗', '行吗', '吗', '呢', '啊', '吧', '呀', '么',
+];
+function cleanSearchQuery(raw) {
+  // 只去结尾疑问/叹号，保留片名内部标点（：·— 等，删了会搜不到）
+  let q = String(raw || '').trim().replace(/[？?！!]+$/g, '').slice(0, 30);
+  for (let round = 0; round < 2 && q; round++) {
+    const before = q;
+    q = q.replace(QUERY_PREFIX_RE, '');
+    let grown = true;
+    while (grown && q) {
+      grown = false;
+      for (const tail of QUERY_SUFFIXES) {
+        // 必须还剩内容才剥，避免把唯一的类别词（如「动漫」）剥光
+        if (q.length > tail.length && q.endsWith(tail)) {
+          q = q.slice(0, q.length - tail.length);
+          grown = true;
+        }
+      }
+    }
+    if (q === before) break;
+  }
+  return q.trim();
+}
+
 // ===== 浏览意图兜底判别：模型没显式传 intent 或把泛问题压成了无信息量 query 时，由代码纠偏 =====
 const LATEST_WORDS = ['最近', '最新', '近期', '上新', '刚上', '新上', '这段时间', '这阵', '新片', '刚上映', '上映了'];
 const POPULAR_WORDS = ['热门', '好看', '推荐', '值得看', '可看', '来点', '火爆', '高分', '必看', '受欢迎', '口碑', '经典'];
@@ -318,10 +395,11 @@ function searchBodyItems(items, query, limit) {
 // 其他 = 策略A body items 的原始 id（含空 id 兜底按标题跳站内搜索）
 const MAX_OVERVIEW = 200; // 详情简介截断（防超上下文）
 
-// TMDB 单条详情：标题/日期/评分/类型/简介（统一入口重试+缓存；失败/查无均返回 null）
+// TMDB 单条详情：标题/日期/评分/类型/简介（统一入口重试+内存缓存；失败/查无均返回 null）
 async function tmdbDetail(tmdbId, mediaType, key) {
   const j = await tmdbGetJson(
-    `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${key}&language=zh-CN`
+    `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${key}&language=zh-CN`,
+    { cacheIf: x => !!(x && (x.title || x.name)) }
   );
   if (!j) return null;
   const title = mediaType === 'movie' ? (j.title || j.original_title) : (j.name || j.original_name);
@@ -542,10 +620,15 @@ export async function onRequestPost(context) {
       try {
         // 单次锁：本轮已检索过则原样返回首次结果，杜绝换参数连调导致的两批结果+双段回答
         if (searchOnce) {
-          return { ...searchOnce, note: '本轮已经检索过，以上 items 就是站内结果，请直接据此回答，不要再调用 searchItems' };
+          return searchOnce.transient
+            ? { ...searchOnce, note: '本轮已确认片库检索服务超时，不要再调用 searchItems（换参数重调也不会有结果），直接把超时情况与「换词/稍后再问/首页搜索框」建议转告用户' }
+            : { ...searchOnce, note: '本轮已经检索过，以上 items 就是站内结果，请直接据此回答，不要再调用 searchItems' };
         }
         const seal = r => { searchOnce = r; return r; };
-        const q = String(query || '').trim().slice(0, 30);
+        // 模型可能把整句口语塞进 query（「请你告诉我奥德赛讲了什么」），先服务端剥皮取核心词；
+        // 剥光（纯追问如「这部怎么样」）才回退原词
+        const rawQ = String(query || '').trim().slice(0, 30);
+        const q = cleanSearchQuery(rawQ) || rawQ;
         const useIntent = detectIntent(intent, q);
         // 排除集合（统一剥书名号）；各源扩量取数，过滤后再截 limit，保证排除后仍拿得满
         const excl = new Set((Array.isArray(exclude) ? exclude : [])
@@ -588,17 +671,17 @@ export async function onRequestPost(context) {
           Promise.resolve(searchBodyItems(bodyItems, q, perSource)),
         ]);
 
-        // 片库源两次重试均失败（null）且站内两源（当前页条目/新闻池）也全空 → 瞬态失败：
-        // 不 seal（给模型同轮二次调用留重试机会，边缘缓存暖后第二次可能直接命中），
-        // 并明确禁止模型断言「站内没有/没收录」——没查到 ≠ 不存在
+        // 片库三个端点均重试失败（null）且站内两源（当前页条目/新闻池）也全空 → 瞬态失败。
+        // 服务端已穷尽 multi/movie/tv 三端点 + 每端点两次重试，模型换参数重调没有意义，
+        // 故 seal 锁定本轮，只允许向用户如实转述超时——没查到 ≠ 不存在，严禁断言「站内没有」
         if (tmdbHits === null && bodyHits.length === 0 && newsHits.length === 0) {
-          return {
+          return seal({
             intent: 'search',
             count: 0,
             items: [],
             transient: true,
-            note: '片库检索服务刚才超时失败，本次空结果不可信，绝不代表站内没有收录。请直接告知用户：片库查询刚才超时了，可以换个关键词（演员名/类型词）或稍后再问一次，也可以用首页搜索框直接搜「' + q + '」。禁止说「站内没有/没收录/片名记错」之类的话。',
-          };
+            note: '片库检索服务刚才超时失败（服务端已重试多个片库端点），本次空结果不可信，绝不代表站内没有收录。请直接告知用户：片库查询刚才超时了，可以换个关键词（演员名/类型词）或稍后再问一次，也可以用首页搜索框直接搜「' + q + '」。禁止说「站内没有/没收录/片名记错/刚又搜了一遍没有」之类的话。',
+          });
         }
 
         // 合并去重（按标题）：当前页条目优先，其次 TMDB，最后资讯；再剔除 exclude
