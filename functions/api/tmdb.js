@@ -145,7 +145,7 @@ function mapShow(zhItem, enItem, genreNames) {
     event: isUpcoming ? 'schedule' : 'online',
     status: isUpcoming ? 'pending' : 'done',
     title: `《${title}》`,
-    summary: zhSummary(finalOverview),
+    summary: zhSummary(finalOverview || title),
     source: 'TMDB',
     sourceLink: `https://www.themoviedb.org/tv/${s.id}`,
     poster: s.poster_path ? IMG + s.poster_path : '',
@@ -250,6 +250,19 @@ export async function onRequestGet(context) {
     const MOVIE_DATE_GTE = '2025-01-01';
     const MOVIE_DATE_LTE = '2026-12-31';
 
+    // ===== 第 2 页扩量（zh 单语言）：各分类时间线数量约翻倍 =====
+    // 先起 Promise 与下方主批次并发；每条 .catch 兜底——第 2 页任一端点抖动只损失增量，主列表不受影响
+    const p2 = [
+      tmdb('/movie/now_playing?region=CN&page=2', key, 'zh-CN').catch(() => null),
+      tmdb('/movie/upcoming?region=CN&page=2', key, 'zh-CN').catch(() => null),
+      tmdb('/tv/on_the_air?page=2', key, 'zh-CN').catch(() => null),
+      tmdb(`/discover/tv?with_genres=18|10766|10765&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=2`, key, 'zh-CN').catch(() => null),
+      tmdb(`/discover/tv?with_genres=16&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=2`, key, 'zh-CN').catch(() => null),
+      tmdb(`/discover/tv?with_genres=10764|10767&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=2`, key, 'zh-CN').catch(() => null),
+      tmdb(`/discover/movie?with_genres=99&primary_release_date.gte=${MOVIE_DATE_GTE}&primary_release_date.lte=${MOVIE_DATE_LTE}&sort_by=popularity.desc&page=2`, key, 'zh-CN').catch(() => null),
+      tmdb(`/discover/tv?with_genres=99&first_air_date.gte=${DATE_GTE}&first_air_date.lte=${DATE_LTE}&sort_by=popularity.desc&page=2`, key, 'zh-CN').catch(() => null),
+    ];
+
     const [
       nowPlayingZh, nowPlayingEn,
       upcomingZh, upcomingEn,
@@ -291,6 +304,10 @@ export async function onRequestGet(context) {
       tmdb('/genre/tv/list', key, 'zh-CN')
     ]);
 
+    // 第 2 页结果（失败为 null → 空数组）
+    const [np2, up2, oa2, dr2, an2, sh2, dm2, dt2] = await Promise.all(p2);
+    const res2 = j => (j && Array.isArray(j.results)) ? j.results : [];
+
     const mg = Object.fromEntries((movieGenres.genres || []).map(g => [g.id, g.name]));
     const tg = Object.fromEntries((tvGenres.genres || []).map(g => [g.id, g.name]));
 
@@ -310,8 +327,8 @@ export async function onRequestGet(context) {
     const items = [];
     const seen = new Set();
 
-    // 正在热映
-    (nowPlayingZh.results || []).slice(0, 14).forEach(m => {
+    // 正在热映（第 1+2 页合并，上限 28；第 2 页仅中文，标题/简介走中文优先链）
+    [...(nowPlayingZh.results || []), ...res2(np2)].slice(0, 28).forEach(m => {
       seen.add('m' + m.id);
       const en = enMovieMap.get(m.id) || {};
       const gids = m.genre_ids || en.genre_ids || [];
@@ -344,7 +361,7 @@ export async function onRequestGet(context) {
         event: 'online',
         status: 'done',
         title: `《${title}》`,
-        summary: zhSummary(finalOverview),
+        summary: zhSummary(finalOverview || title),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: (m.poster_path || en.poster_path) ? IMG + (m.poster_path || en.poster_path) : '',
@@ -357,8 +374,8 @@ export async function onRequestGet(context) {
       });
     });
 
-    // 即将上映
-    (upcomingZh.results || []).slice(0, 14).forEach(m => {
+    // 即将上映（第 1+2 页合并，上限 28）
+    [...(upcomingZh.results || []), ...res2(up2)].slice(0, 28).forEach(m => {
       if (seen.has('m' + m.id)) return;
       const en = enMovieMap.get(m.id) || {};
       const gids = m.genre_ids || en.genre_ids || [];
@@ -392,7 +409,7 @@ export async function onRequestGet(context) {
         event: isPast ? 'online' : 'schedule',
         status: isPast ? 'done' : 'pending',
         title: `《${title}》`,
-        summary: zhSummary(finalOverview),
+        summary: zhSummary(finalOverview || title),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: (m.poster_path || en.poster_path) ? IMG + (m.poster_path || en.poster_path) : '',
@@ -405,13 +422,13 @@ export async function onRequestGet(context) {
       });
     });
 
-    // 正在播出 + 各分类 discover 结果（电视剧/动漫/综艺/纪录片）
+    // 正在播出 + 各分类 discover 结果（电视剧/动漫/综艺/纪录片），第 1+2 页合并去重
     const tvSeen = new Set();
     const allTvResults = [
-      ...(onAirZh.results || []),
-      ...(dramaDiscoverZh.results || []),
-      ...(animeDiscoverZh.results || []),
-      ...(showZh.results || [])
+      ...(onAirZh.results || []), ...res2(oa2),
+      ...(dramaDiscoverZh.results || []), ...res2(dr2),
+      ...(animeDiscoverZh.results || []), ...res2(an2),
+      ...(showZh.results || []), ...res2(sh2)
     ];
     allTvResults.forEach(s => {
       if (tvSeen.has(s.id)) return;
@@ -421,9 +438,9 @@ export async function onRequestGet(context) {
       if (item) items.push(item);
     });
 
-    // 纪录片
+    // 纪录片（第 1+2 页合并，各上限 20）
     const docSeen = new Set();
-    (docMoviesZh.results || []).slice(0, 10).forEach(m => {
+    [...(docMoviesZh.results || []), ...res2(dm2)].slice(0, 20).forEach(m => {
       if (seen.has('m' + m.id) || docSeen.has(m.id)) return;
       docSeen.add(m.id);
       const en = enMovieMap.get(m.id) || {};
@@ -454,7 +471,7 @@ export async function onRequestGet(context) {
         event: 'online',
         status: 'done',
         title: `《${title}》`,
-        summary: zhSummary(finalOverview),
+        summary: zhSummary(finalOverview || title),
         source: 'TMDB',
         sourceLink: `https://www.themoviedb.org/movie/${m.id}`,
         poster: (m.poster_path || en.poster_path) ? IMG + (m.poster_path || en.poster_path) : '',
@@ -466,7 +483,7 @@ export async function onRequestGet(context) {
         }
       });
     });
-    (docTvZh.results || []).slice(0, 10).forEach(s => {
+    [...(docTvZh.results || []), ...res2(dt2)].slice(0, 20).forEach(s => {
       if (tvSeen.has(s.id) || docSeen.has(s.id)) return;
       docSeen.add(s.id);
       const en = enTvMap.get(s.id) || {};
@@ -507,7 +524,7 @@ export async function onRequestGet(context) {
       if (!isZh) return false;
       const ov = n.detail.intro || '';
       return !ov || !hasChinese(ov);
-    });
+    }).slice(0, 20); // 子请求预算：28 个列表请求 + 20 个详情补全 = 48，不超 CF 免费档单请求 50 上限
     if (cnNeedFetch.length > 0) {
       await Promise.all(cnNeedFetch.map(async n => {
         try {
