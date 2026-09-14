@@ -99,14 +99,17 @@ async function boot() {
     if (!txt || !refs || !refs.length) return txt;
     const norm = s => String(s || '').replace(/\s+/g, '');
     const refMap = new Map(refs.filter(r => r && r.title && r.url).map(r => [norm(r.title), r]));
+    const linked = new Set(); // 同一部影片只保留首次出现的传送链接，后续提及退化为纯文本
     const parts = [];
     const re = /《([^《》]{1,60})》/g;
     let last = 0, m;
     while ((m = re.exec(txt)) !== null) {
       if (m.index > last) parts.push(txt.slice(last, m.index));
       const inner = m[1];
-      const hit = refMap.get(norm(inner));
-      if (hit) {
+      const key = norm(inner);
+      const hit = refMap.get(key);
+      if (hit && !linked.has(key)) {
+        linked.add(key);
         parts.push(html`<span class="chat-title-link" role="link" tabindex="0" title=${'点击前往：' + hit.title} onClick=${() => openRef(hit)}>《${inner}》</span>`);
       } else {
         parts.push('《' + inner + '》');
