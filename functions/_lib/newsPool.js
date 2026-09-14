@@ -165,15 +165,20 @@ export async function buildNewsPool() {
   }
 
   // 窗口降级策略：首选 24h；不足保底条数时逐步放宽（48h/72h），防止源断更导致空池
+  // 环球影讯豁免此窗口——它在 fetchHuanqiu 拉取端已按 72h cutoff 过滤过。
+  // 原因：该频道更新频率波动大（实测可连续 40+ 小时不更新），而国际 RSS 常年充足
+  // （总池永远 ≥ POOL_MIN），若统一按 24h 滤，窗口永远不会因环球而降级，环球会被
+  // 整源滤光，下游三层环球保底全部无米下锅。72h 内的环球始终保留，最多 2 条。
+  const inWindow = (n, ms) => n.source === '环球影讯' || n.ts >= Date.now() - ms;
   let windowMs = POOL_WINDOW_MS;
-  let pool = all.filter(n => n.ts >= Date.now() - windowMs);
+  let pool = all.filter(n => inWindow(n, windowMs));
   if (pool.length < POOL_MIN) {
     windowMs = 48 * 3600 * 1000;
-    pool = all.filter(n => n.ts >= Date.now() - windowMs);
+    pool = all.filter(n => inWindow(n, windowMs));
   }
   if (pool.length < POOL_MIN) {
     windowMs = POOL_FALLBACK_MS;
-    pool = all.filter(n => n.ts >= Date.now() - windowMs);
+    pool = all.filter(n => inWindow(n, windowMs));
   }
 
   // 按新鲜度降序，截断上限

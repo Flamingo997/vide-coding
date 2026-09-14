@@ -4,7 +4,7 @@
 // - 双层缓存：模块级内存 Map（同 isolate 去重）+ cf fetch 缓存（跨请求，6h）
 // - 抓取失败时返回降级内容（标题+摘要），Agent 仍可工作但会被告知原文缺失
 
-const ARTICLE_MAX_CHARS = 6000; // 单篇截断，控制 token 成本
+const ARTICLE_MAX_CHARS = 10000; // 单篇截断，控制 token 成本（英文长报道 JINA 原文常 1.2-2 万字符，6000 会砍掉一半）
 const MEM_CACHE_TTL = 6 * 3600 * 1000; // 内存缓存 6h
 
 // 与 newsPool 一致的浏览器头（环球 API 已在生产验证可用）
@@ -48,7 +48,14 @@ function htmlToText(html) {
 
 function truncate(text, max = ARTICLE_MAX_CHARS) {
   if (text.length <= max) return text;
-  return text.slice(0, max).replace(/[\s,，。.；;、]+$/, '') + '…（截断）';
+  const head = text.slice(0, max);
+  // 优先在段落/句末边界收尾，避免把一句话切成半句；边界若早于 3/4 处（说明前 7500 字
+  // 没有合适标点）就硬切，防止为找边界丢太多内容
+  const boundaries = ['\n', '。', '！', '？', '. ', '! ', '? ']
+    .map(b => head.lastIndexOf(b));
+  const best = Math.max(...boundaries);
+  const cut = best > max * 0.75 ? best : max;
+  return head.slice(0, cut).replace(/[\s,，。.；;、]+$/, '') + '…（截断）';
 }
 
 // ===== 环球：直连 HTML + 解析 <article> =====
