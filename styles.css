@@ -1202,44 +1202,18 @@ body {
 }
 .chat-chip:hover { background: #E8F2FE; }
 
-/* 参考条目 chips（assistant 消息 tool 结果的可点击回链） */
-.chat-refs {
-  display: flex; flex-wrap: wrap; gap: 7px;
-  margin-top: 8px;
+/* 回答文本内的《片名》传送链接（仅站内真实条目可点击，点击跳转 /?q= 站内位置） */
+.chat-title-link {
+  color: #B36B00; font-weight: 600;
+  border-bottom: 1.5px dashed rgba(179,107,0,0.45);
+  cursor: pointer; border-radius: 2px;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
 }
-.chat-ref-chip {
-  display: inline-flex; align-items: center; gap: 7px;
-  max-width: 100%;
-  border: 1px solid #E8ECF2; background: #FFFFFF;
-  color: #334155; border-radius: 999px;
-  padding: 4px 11px 4px 5px;
-  font-size: 12.5px; line-height: 1.5; cursor: pointer;
-  box-shadow: 0 1px 2px rgba(15,23,42,0.05);
-  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
+.chat-title-link:hover {
+  color: #8A5200; background: rgba(253,231,198,0.55);
+  border-bottom-color: #8A5200; border-bottom-style: solid;
 }
-.chat-ref-chip:hover {
-  border-color: #F3C98B; background: #FFFBF4;
-  box-shadow: 0 3px 10px rgba(179,107,0,0.12);
-  transform: translateY(-1px);
-}
-.chat-ref-chip:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(15,23,42,0.06); }
-.ref-type-badge {
-  flex-shrink: 0;
-  background: #FEF3E2; color: #B36B00;
-  border-radius: 999px; padding: 0 8px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
-  white-space: nowrap;
-}
-.chat-ref-chip:hover .ref-type-badge { background: #FDE7C6; }
-.ref-name {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-weight: 500;
-}
-.ref-go {
-  flex-shrink: 0; color: #B6C0CE;
-  transition: color .16s ease, transform .16s ease;
-}
-.chat-ref-chip:hover .ref-go { color: #D08A2B; transform: translate(1px, -1px); }
+.chat-title-link:focus-visible { outline: 2px solid #F3C98B; outline-offset: 1px; }
 
 /* 错误条 */
 .chat-error {

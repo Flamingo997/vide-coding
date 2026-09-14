@@ -91,6 +91,33 @@ async function boot() {
     return out;
   }
 
+  // 文本内《片名》链接化：片名出现在该条消息工具结果（站内真实条目）里才可点击，
+  // 点击传送到该影片的站内位置（/?q= 落地到时间线检索）；不在站内的提及保持纯文本。
+  // 《》由站内助手系统提示词强制；refs 在工具 output-available 后才有，流式过程中《》暂为纯文本，
+  // 工具结果落定后自动变为可点击。
+  function linkify(txt, refs, openRef) {
+    if (!txt || !refs || !refs.length) return txt;
+    const norm = s => String(s || '').replace(/\s+/g, '');
+    const refMap = new Map(refs.filter(r => r && r.title && r.url).map(r => [norm(r.title), r]));
+    const parts = [];
+    const re = /《([^《》]{1,60})》/g;
+    let last = 0, m;
+    while ((m = re.exec(txt)) !== null) {
+      if (m.index > last) parts.push(txt.slice(last, m.index));
+      const inner = m[1];
+      const hit = refMap.get(norm(inner));
+      if (hit) {
+        parts.push(html`<span class="chat-title-link" role="link" tabindex="0" title=${'点击前往：' + hit.title} onClick=${() => openRef(hit)}>《${inner}》</span>`);
+      } else {
+        parts.push('《' + inner + '》');
+      }
+      last = re.lastIndex;
+    }
+    if (!parts.length) return txt;
+    if (last < txt.length) parts.push(txt.slice(last));
+    return parts;
+  }
+
   function loadHistory(key) {
     try {
       const arr = JSON.parse(localStorage.getItem(key) || '[]');
@@ -276,22 +303,12 @@ async function boot() {
             ` : null}
 
             ${messages.map(m => {
-              const refs = m.role === 'assistant' ? refItemsOf(m).slice(0, 5) : [];
+              const refs = m.role === 'assistant' ? refItemsOf(m) : [];
               const txt = textOf(m);
+              const bubble = m.role === 'assistant' ? linkify(txt, refs, openRef) : txt;
               return html`
               <div key=${m.id} class=${'chat-msg ' + (m.role === 'user' ? 'chat-msg-user' : 'chat-msg-ai')}>
-                ${txt ? html`<div class="chat-bubble">${txt}</div>` : null}
-                ${refs.length ? html`
-                  <div class="chat-refs">
-                    ${refs.map(r => html`
-                      <button class="chat-ref-chip" key=${(r.id || '') + (r.title || '')} title=${r.title + '（点击前往）'} onClick=${() => openRef(r)}>
-                        ${r.typeLabel ? html`<span class="ref-type-badge">${r.typeLabel}</span>` : ''}
-                        <span class="ref-name">${r.title}</span>
-                        <svg class="ref-go" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
-                      </button>
-                    `)}
-                  </div>
-                ` : null}
+                ${txt ? html`<div class="chat-bubble">${bubble}</div>` : null}
               </div>
             `;
             })}
