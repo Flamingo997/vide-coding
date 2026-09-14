@@ -189,7 +189,7 @@ async function boot() {
     }, []);
 
     if (!open) return null;
-    // 全站模式：固定单实例（历史持久化到 stationchat:v1）
+    // 全站模式：固定单实例（历史持久化到 stationchat:v2）
     if (station) return html`<${ChatDrawer} key="station" station=${true} onClose=${() => setOpen(false)} />`;
     if (!article) return null;
     return html`<${ChatDrawer} key=${article.url} article=${article} autoQuestion=${autoQuestion} onClose=${() => setOpen(false)} />`;
@@ -197,7 +197,9 @@ async function boot() {
 
   // ===== 抽屉：station=true 全站助手（/api/assistant + searchItems 工具）；否则单篇文章对谈（/api/news-chat）=====
   function ChatDrawer({ article, autoQuestion, station, onClose }) {
-    const storageKey = station ? 'stationchat:v1' : ('newschat:' + article.url);
+    // v2：早期片库抖动期留下的「空检索结果」历史会让模型复读「没搜到」而不重新调用工具，
+    // 服务端虽已强制重检，但旧上下文本身也是噪音，直接换键清空（仅全站助手）
+    const storageKey = station ? 'stationchat:v2' : ('newschat:' + article.url);
     const [initialMessages] = useState(() => loadHistory(storageKey));
     const [uiError, setUiError] = useState('');
     const [input, setInput] = useState('');

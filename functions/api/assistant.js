@@ -571,6 +571,23 @@ export async function onRequestPost(context) {
 
   const modelMessages = await convertToModelMessages(trimmed);
 
+  // ===== 历史污染防护 =====
+  // 前端会把历史工具结果持久化到 localStorage。早期失败轮（片库抖动/边缘缓存污染时期）留下的
+  // 「searchItems → 空结果」会被后续每一轮带上，模型看到「上次搜过是空的」就不再调工具、直接复读
+  // 「站里没搜到」——实测只要历史里有一条空检索，用户怎么重问都零工具调用。
+  // 检测到这种历史且本轮不是收藏类问题时，强制本轮必须重新调用 searchItems 拿新鲜结果。
+  const partIsEmptySearch = p => !!p
+    && String(p.type || '') === 'tool-searchItems'
+    && p.state === 'output-available'
+    && p.output && typeof p.output === 'object'
+    && (p.output.count === 0 || p.output.transient === true || !!p.output.error);
+  const historyPoisoned = msgs => msgs.some(m =>
+    m.role === 'assistant' && Array.isArray(m.parts) && m.parts.some(partIsEmptySearch));
+  const lastUserText = [...trimmed].reverse().find(m => m.role === 'user')?.parts
+    .filter(p => p.type === 'text').map(p => String(p.text || '')).join(' ') || '';
+  const favoritesLike = /收藏|标记过|标记的|我喜欢|点赞/.test(lastUserText);
+  const forceFreshSearch = historyPoisoned(trimmed) && !favoritesLike;
+
   // ===== 通道选择：DeepSeek（探针 + 60s 缓存）→ Workers AI qwen3-30b =====
   const now = Date.now();
   if (dsAlive === null || now - dsCheckedAt > DS_CACHE_MS) {
@@ -755,6 +772,8 @@ export async function onRequestPost(context) {
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
     tools: { searchItems, getFavorites, getItemById },
+    // 历史被空结果污染时强制先重新检索（防止模型照搬历史结论零工具调用）
+    ...(forceFreshSearch ? { toolChoice: { type: 'tool', toolName: 'searchItems' } } : {}),
     stopWhen: stepCountIs(5),
   });
 
