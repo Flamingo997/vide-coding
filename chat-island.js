@@ -256,7 +256,7 @@ async function boot() {
             <div class="chat-head-info">
               ${station ? html`
                 <span class="chat-head-src">[AI助手]</span>
-                <span class="chat-head-title" title="影新鲜站内助手">影新鲜站内助手 · 找片 / 查资讯</span>
+                <span class="chat-head-title" title="影新鲜站内助手">影新鲜站内助手</span>
               ` : html`
                 <span class="chat-head-src">[${article.source || '影讯'}]</span>
                 <a class="chat-head-title" href=${article.url} target="_blank" rel="noopener" title=${article.title}>${article.title}</a>
@@ -284,8 +284,10 @@ async function boot() {
                 ${refs.length ? html`
                   <div class="chat-refs">
                     ${refs.map(r => html`
-                      <button class="chat-ref-chip" key=${(r.id || '') + (r.title || '')} title=${r.title} onClick=${() => openRef(r)}>
-                        ${r.typeLabel ? r.typeLabel + ' · ' : ''}${r.title}
+                      <button class="chat-ref-chip" key=${(r.id || '') + (r.title || '')} title=${r.title + '（点击前往）'} onClick=${() => openRef(r)}>
+                        ${r.typeLabel ? html`<span class="ref-type-badge">${r.typeLabel}</span>` : ''}
+                        <span class="ref-name">${r.title}</span>
+                        <svg class="ref-go" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
                       </button>
                     `)}
                   </div>
