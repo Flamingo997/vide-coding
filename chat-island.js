@@ -69,7 +69,15 @@ async function boot() {
   const STATION_CHIPS = ['有什么好看的科幻片？', '帮我找几部悬疑电影', '最近有什么喜剧可以看？'];
   const MAX_INPUT = 500;
 
-  const textOf = m => (m.parts || []).filter(p => p.type === 'text').map(p => p.text).join('\n');
+  // 取消息纯文本：多步工具调用时 AI SDK 会给每个只调工具的 step 留一个空 text part
+  // （SSE 先 text-start 再走工具、本步无 text-delta），不过滤会在气泡顶部拼出成片空行，
+  // 故丢弃 trim 后为空的文本段，并去掉整体首尾空白
+  const textOf = m => (m.parts || [])
+    .filter(p => p.type === 'text')
+    .map(p => String(p.text || ''))
+    .filter(t => t.trim())
+    .join('\n')
+    .trim();
 
   // 从 assistant 消息的 tool parts 提取参考条目（searchItems/getFavorites 列表 + getItemById 单条），
   // 用于渲染「参考了哪些条目」chips（AI SDK 7：type='tool-<name>'，state='output-available' 时有 output）
@@ -135,9 +143,12 @@ async function boot() {
         id: m.id,
         role: m.role,
         parts: (m.parts || []).filter(p =>
-          p.type === 'text' ||
+          // 空文本段（工具步留下的占位 text part）不持久化，避免历史膨胀且刷新后气泡顶部带空行
+          (p.type === 'text' && String(p.text || '').trim()) ||
           (typeof p.type === 'string' && p.type.startsWith('tool-') && p.state === 'output-available' && p.toolCallId)
-        ).map(p => p.type === 'text' ? p : {
+        ).map(p => p.type === 'text'
+          ? { type: 'text', text: String(p.text).trim() }
+          : {
           type: p.type,
           toolCallId: p.toolCallId,
           state: 'output-available',
