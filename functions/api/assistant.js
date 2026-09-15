@@ -620,13 +620,7 @@ export async function onRequestPost(context) {
     return json400('最后一条必须是用户消息');
   }
 
-  const modelMessages = await convertToModelMessages(trimmed);
-
-  // ===== 历史污染防护 =====
-  // 前端会把历史工具结果持久化到 localStorage。早期失败轮（片库抖动/边缘缓存污染时期）留下的
-  // 「searchItems → 空结果」会被后续每一轮带上，模型看到「上次搜过是空的」就不再调工具、直接复读
-  // 「站里没搜到」——实测只要历史里有一条空检索，用户怎么重问都零工具调用。
-  // 检测到这种历史且本轮不是收藏类问题时，强制本轮必须重新调用 searchItems 拿新鲜结果。
+  // ===== 意图识别 + 历史污染防护（convertToModelMessages 之前，castAsk 需要净化送模消息）=====
   const partIsEmptySearch = p => !!p
     && String(p.type || '') === 'tool-searchItems'
     && p.state === 'output-available'
@@ -642,6 +636,22 @@ export async function onRequestPost(context) {
   // 「沈腾主演的电影有哪些」是搜片意图，不能锁演员表链。命中模式：疑问词（谁演/谁主演/主演是谁）、
   // 「的演员/的主演」、演员/阵容类词结尾的问句
   const castAsk = /谁演|谁主演|的演员|的主演|演员名单|演员表|演员阵容|主演名单|演职员|主演是谁|演员是谁|有哪些演员|有哪些主演|(?:演员|主演|阵容)[？?。！!]*$/.test(lastUserText);
+  const castFresh = castAsk && !favoritesLike;
+
+  // 演员类问题的送模消息净化：剥离历史中全部工具 part、只保留文本轮次。
+  // 两个实测原因：① 早期失败轮的空工具结果/「漏调工具下的错误文字结论」会诱导模型复读「查不到演员」；
+  // ② 更硬的坑——历史里已带 searchItems 的 tool_call/result 时，step0 再强制 toolChoice=searchItems，
+  // DeepSeek 兼容接口直接 400/500（start 后零帧即 error；二者单独存在都不报错，组合必现）。
+  // 剥离后保留用户/助手文本以支撑「那第一部谁演的」这类代词追问；空 parts 消息整条丢弃，
+  // 最后一条 user 必在（原始 trimmed 已保证）。真实阵容由下方 prepareStep 强制的新鲜工具链重新取得。
+  const feedMessages = castFresh
+    ? trimmed
+      .map(m => (m.role === 'assistant'
+        ? { ...m, parts: m.parts.filter(p => p.type === 'text') }
+        : m))
+      .filter(m => m.parts.length)
+    : trimmed;
+  const modelMessages = await convertToModelMessages(feedMessages);
 
   // ===== 通道选择：DeepSeek（探针 + 60s 缓存）→ Workers AI qwen3-30b =====
   const now = Date.now();
@@ -870,7 +880,7 @@ export async function onRequestPost(context) {
     //    getCredits 查真实阵容（非 tmdb 条目由工具 note 兜底）；搜不到则放行，让模型回答「没找到这片」。
     // ② 其余空检索污染：step0 锁 searchItems
     prepareStep: ({ stepNumber, steps }) => {
-      if (castAsk && !favoritesLike) {
+      if (castFresh) {
         if (stepNumber === 0) return { toolChoice: { type: 'tool', toolName: 'searchItems' } };
         if (stepNumber === 1) {
           const hitItem = steps?.[0]?.toolResults?.some(r =>
