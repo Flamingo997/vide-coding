@@ -313,6 +313,10 @@ const QUERY_LEAD_RE = /^(?:请你|麻烦你|请问|帮我|帮忙|想知道|想�
 const QUERY_SUFFIXES = [
   '讲的是什么', '讲了什么', '讲的啥', '讲什么', '讲啥', '说了什么', '是什么电影', '是什么剧',
   '是什么', '是啥', '剧情简介', '剧情介绍', '故事情节', '内容简介', '故事梗概', '讲的故事',
+  // 演员类尾巴（问「谁演的/有哪些演员」）：长的在前，防「有哪些」先咬掉「演员」
+  '有哪些演员', '有哪些主演', '演员有哪些', '主演有哪些', '主演是谁', '演员是谁', '是谁演的', '是谁主演的', '谁主演的', '谁演的',
+  '演员阵容', '演员名单', '演职员表', '演职员', '的演员', '的主演', '有哪些', '是谁',
+  '主演', '演员', '阵容',
   '好看吗', '值得看吗', '好不好看', '怎么样', '咋样', '如何', '这部片子', '这部电影', '这部片', '这部剧', '这部',
   '剧情', '简介', '详细介绍', '介绍', '详情', '资料',
   '的电影', '的影片', '的电视剧', '的纪录片', '的综艺', '的动漫', '的动画', '的短剧', '的片子',
@@ -449,6 +453,19 @@ async function tmdbDetail(tmdbId, mediaType, key) {
     overview: String(j.overview || '').trim().slice(0, MAX_OVERVIEW),
     url: stationUrl(title),
   };
+}
+
+// TMDB 演职员表：按条目 id 取前 12 位演员（与 /api/credits 端点同源同参）。
+// 统一入口自带重试 + 内存缓存（只缓存非空 cast，真空不缓存）；整体失败返回 null（瞬态），空阵容返回 []
+const MAX_CAST_NAMES = 12;
+const castNonEmpty = j => Array.isArray(j?.cast) && j.cast.some(c => c && c.name);
+async function tmdbCastNames(tmdbId, mediaType, key) {
+  const j = await tmdbGetJson(
+    `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/credits?api_key=${key}&language=zh-CN`,
+    { cacheIf: castNonEmpty }
+  );
+  if (!j) return null;
+  return (j.cast || []).slice(0, MAX_CAST_NAMES).map(c => String(c.name || '').trim()).filter(Boolean);
 }
 
 // 新闻池按 url 尾部匹配（searchNewsPool 生成的 id = 'news-' + url 后 32 字符）
@@ -804,6 +821,35 @@ export async function onRequestPost(context) {
     },
   });
 
+  // ===== 演职员工具：按 id 查演员阵容（用户问「这部片谁演的/有哪些演员」时先 searchItems 拿 id 再调这里）=====
+  // id 形态与站内条目一致：tmdb-(movie|docmovie)-N → /movie；tmdb-(tv|drama|anime|show)-N → /tv（站内实际只用 tv）。
+  // 非 tmdb id（短剧/资讯）直接返回说明文案；任何异常消化为文案，绝不 500
+  const getCredits = tool({
+    description: '获取某部影视条目的演员阵容（演职员表，前 12 位演员名）。用户问「谁演的」「有哪些演员」「主演是谁」「演员阵容」时，先用 searchItems 检索该作品拿到条目 id，再把 id 传给本工具。仅支持 tmdb- 前缀条目；短剧/资讯条目没有演职员数据。',
+    inputSchema: z.object({
+      id: z.string().describe('条目 id，来自 searchItems/getItemById 返回结果中的 id 字段（如 tmdb-movie-123、tmdb-tv-456）'),
+    }),
+    execute: async ({ id }) => {
+      try {
+        const raw = String(id || '').trim();
+        const m = raw.match(/^tmdb-([a-z]+)-(\d+)$/);
+        if (!m || !env.TMDB_API_KEY) {
+          return { count: 0, cast: [], note: '该条目不是影视库条目（短剧/资讯等）或演职员服务未配置：如实告知用户站内暂无这部作品的演职员资料，不要凭记忆编造演员名单' };
+        }
+        const mediaType = ['tv', 'drama', 'anime', 'show'].includes(m[1]) ? 'tv' : 'movie';
+        const cast = await tmdbCastNames(m[2], mediaType, env.TMDB_API_KEY);
+        if (cast === null) {
+          return { count: 0, cast: [], transient: true, note: '演职员查询刚才超时失败，不代表没有数据：如实告知用户稍后再问，禁止断言该片没有演员信息' };
+        }
+        if (!cast.length) return { count: 0, cast: [], note: '该片暂无演职员数据（片库收录为空）：如实告知用户，不要凭记忆编造演员名单' };
+        return { count: cast.length, cast };
+      } catch (_) {
+        // 工具异常绝不冒泡导致整请求 500
+        return { count: 0, cast: [], note: '演职员查询暂时失败，稍后再试' };
+      }
+    },
+  });
+
   // ===== 流式生成 + UIMessage SSE（tools 双通道都挂，stopWhen 防 tool 死循环）=====
   const result = streamText({
     model,
@@ -812,7 +858,7 @@ export async function onRequestPost(context) {
     temperature: 0.7,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
-    tools: { searchItems, getFavorites, getItemById },
+    tools: { searchItems, getFavorites, getItemById, getCredits },
     // 历史被空结果污染时只在「第一步」强制重新检索（全局 toolChoice 会连后续步也锁死，
     // 模型拿完结果无法进入文本回答步；prepareStep 按步覆盖，stepNumber 0=首轮）
     prepareStep: ({ stepNumber }) => (forceFreshSearch && stepNumber === 0)
