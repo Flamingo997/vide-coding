@@ -624,20 +624,31 @@ export async function onRequestPost(context) {
 
   // ===== 历史污染防护 =====
   // 前端会把历史工具结果持久化到 localStorage。早期失败轮（片库抖动/边缘缓存污染时期）留下的
-  // 「searchItems → 空结果」会被后续每一轮带上，模型看到「上次搜过是空的」就不再调工具、直接复读
-  // 「站里没搜到」——实测只要历史里有一条空检索，用户怎么重问都零工具调用。
-  // 检测到这种历史且本轮不是收藏类问题时，强制本轮必须重新调用 searchItems 拿新鲜结果。
+  // 空工具结果会被后续每一轮带上，模型看到「上次查过是空的」就不再调工具、直接复读——实测只要历史里
+  // 有一条空结果，用户怎么重问都零工具调用。两类已复现：
+  //  1) searchItems → 空：复读「站里没搜到」；
+  //  2) getCredits → count=0（新片演职员表在 TMDB 从无到有更新，第一次问时真空/瞬态空）：永久复读「查不到演员」。
+  // 检测到污染且本轮不是收藏类问题时，step 0 强制重调对应工具拿新鲜结果（演员类追问→getCredits，其余→searchItems）。
   const partIsEmptySearch = p => !!p
     && String(p.type || '') === 'tool-searchItems'
     && p.state === 'output-available'
     && p.output && typeof p.output === 'object'
     && (p.output.count === 0 || p.output.transient === true || !!p.output.error);
-  const historyPoisoned = msgs => msgs.some(m =>
-    m.role === 'assistant' && Array.isArray(m.parts) && m.parts.some(partIsEmptySearch));
+  const partIsEmptyCredits = p => !!p
+    && String(p.type || '') === 'tool-getCredits'
+    && p.state === 'output-available'
+    && p.output && typeof p.output === 'object'
+    && (p.output.count === 0 || p.output.transient === true || !!p.output.error);
+  const hasPoisonedPart = (msgs, tester) => msgs.some(m =>
+    m.role === 'assistant' && Array.isArray(m.parts) && m.parts.some(tester));
   const lastUserText = [...trimmed].reverse().find(m => m.role === 'user')?.parts
     .filter(p => p.type === 'text').map(p => String(p.text || '')).join(' ') || '';
   const favoritesLike = /收藏|标记过|标记的|我喜欢|点赞/.test(lastUserText);
-  const forceFreshSearch = historyPoisoned(trimmed) && !favoritesLike;
+  // 演员类意图：问「演员/主演/谁演的/阵容」时，空演员表污染要靠重查 getCredits 自愈
+  const castAsk = /演员|主演|谁演|出演|阵容|演职员/.test(lastUserText);
+  const creditsPoisoned = hasPoisonedPart(trimmed, partIsEmptyCredits);
+  const forceFreshSearch = hasPoisonedPart(trimmed, partIsEmptySearch) && !favoritesLike;
+  const forceFreshCredits = castAsk && creditsPoisoned && !favoritesLike;
 
   // ===== 通道选择：DeepSeek（探针 + 60s 缓存）→ Workers AI qwen3-30b =====
   const now = Date.now();
@@ -859,11 +870,16 @@ export async function onRequestPost(context) {
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
     tools: { searchItems, getFavorites, getItemById, getCredits },
-    // 历史被空结果污染时只在「第一步」强制重新检索（全局 toolChoice 会连后续步也锁死，
-    // 模型拿完结果无法进入文本回答步；prepareStep 按步覆盖，stepNumber 0=首轮）
-    prepareStep: ({ stepNumber }) => (forceFreshSearch && stepNumber === 0)
-      ? { toolChoice: { type: 'tool', toolName: 'searchItems' } }
-      : undefined,
+    // 历史污染自愈：只在 step 0 强制（全局 toolChoice 会连文本回答步也锁死导致空回答）。
+    // 演员类追问强制「必须调工具」，检索类污染强制重搜 searchItems，详见下方分支注释
+    prepareStep: ({ stepNumber }) => {
+      if (stepNumber !== 0) return undefined;
+      // 演员类追问只强制「必须调工具」而不锁死 getCredits：同片重问时模型直查 getCredits 自愈，
+      // 换片问演员时模型可先 searchItems 再 getCredits，避免拿历史旧 id 张冠李戴
+      if (forceFreshCredits) return { toolChoice: 'required' };
+      if (forceFreshSearch) return { toolChoice: { type: 'tool', toolName: 'searchItems' } };
+      return undefined;
+    },
     stopWhen: stepCountIs(5),
   });
 
