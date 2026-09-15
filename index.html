@@ -1210,11 +1210,15 @@
         if (j && j.code === 0 && j.count > 0) {
           const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
           line.innerHTML = '<strong>主演：</strong>' + j.cast.map(esc).join(' / ');
+        } else if (j && j.code === 0) {
+          // TMDB 确无演职员数据（常见于合集剧场版/小语种）：如实说明，不回退到类型词冒充
+          line.innerHTML = '<strong>主演：</strong>暂无演职员数据';
         } else {
-          line.innerHTML = fallback; // 查不到演职员：回退原行
+          line.innerHTML = fallback; // 请求失败：恢复原行
+          item.dataset.castDone = '';  // 清除标记，下次展开自动重试
         }
       })
-      .catch(() => { line.innerHTML = fallback; });
+      .catch(() => { line.innerHTML = fallback; item.dataset.castDone = ''; });
   }
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
