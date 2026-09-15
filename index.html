@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -1121,7 +1121,7 @@
             ? `<span style="font-size:11px;color:#fff;background:#d33;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle">日期异常</span>`
             : '';
           return `
-            <div class="tl-item" style="--tc:${t.color}" id="${elId}" data-title="${safeTitle}">
+            <div class="tl-item" style="--tc:${t.color}" id="${elId}" data-title="${safeTitle}" data-id="${String(n.id || '').replace(/"/g, '&quot;')}">
               <div class="${nodeCls}"></div>
               <article class="card" onclick="toggleCard(this)">
                 <div class="poster"><img src="${n.poster || POSTER_MAP[n.title]}" alt="${n.title}" loading="lazy"></div>
@@ -1143,7 +1143,7 @@
                   </div>
                   <div class="detail">
                     <p>${n.detail.intro || '暂无简介'}</p>
-                    <div class="meta-line"><strong>主创：</strong>${n.detail.cast}</div>
+                    <div class="meta-line cast-line"><strong>主创：</strong>${n.detail.cast}</div>
                     <div class="meta-line"><strong>播出：</strong>${n.detail.platform}</div>
                     <div class="meta-line"><strong>规格：</strong>${n.detail.ep}</div>
                   </div>
@@ -1188,7 +1188,34 @@
       const tag = card.querySelector('.tag-solid');
       trackCardView(item.dataset.title, tag ? tag.textContent.replace('日期异常', '').trim() : '');
     }
+    // 展开且是 TMDB 条目时懒加载演员表
+    loadCastNames(card, item);
   };
+
+  // 演员表懒加载：点开名片才请求 /api/credits，每个条目只拉一次；
+  // 失败静默保留原「主创」行（列表接口里该行放的是类型词）
+  function loadCastNames(card, item) {
+    const detailEl = card.querySelector('.detail');
+    if (!detailEl || !detailEl.classList.contains('open')) return;      // 只在展开时拉
+    if (!item || !item.dataset.id || item.dataset.castDone) return;     // 非条目或已拉过
+    if (!/^tmdb-(movie|tv|docmovie)-\d+$/.test(item.dataset.id)) return; // 仅 TMDB 条目
+    item.dataset.castDone = '1';
+    const line = card.querySelector('.cast-line');
+    if (!line) return;
+    const fallback = line.innerHTML;
+    line.innerHTML = '<strong>主演：</strong>演员信息加载中…';
+    fetch('/api/credits?id=' + encodeURIComponent(item.dataset.id))
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (j && j.code === 0 && j.count > 0) {
+          const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          line.innerHTML = '<strong>主演：</strong>' + j.cast.map(esc).join(' / ');
+        } else {
+          line.innerHTML = fallback; // 查不到演职员：回退原行
+        }
+      })
+      .catch(() => { line.innerHTML = fallback; });
+  }
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
   function oneLineSummary(text) {
