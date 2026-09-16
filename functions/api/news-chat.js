@@ -3,7 +3,7 @@
 // 请求体：{ url, title, source, text(原文全文), messages: UIMessage[], search?: boolean }
 //   search=true：来自「深挖一下」引导性问题 chip，首条消息直接联网搜索补充上下文
 // 响应：UIMessage Stream（SSE），供 useChat 直接消费
-import { streamText, generateText, convertToModelMessages, toUIMessageStream, createUIMessageStreamResponse } from 'ai';
+import { streamText, generateText, convertToModelMessages, toUIMessageStream, createUIMessageStream, createUIMessageStreamResponse } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { NEWS_CHAT_SYSTEM } from '../_lib/prompts.js';
 
@@ -131,62 +131,77 @@ export async function onRequestPost(context) {
 
   const modelMessages = await convertToModelMessages(trimmed);
 
-  // ===== 通道选择：DeepSeek（探针 + 60s 缓存）→ Workers AI qwen3-30b =====
-  const now = Date.now();
-  if (dsAlive === null || now - dsCheckedAt > DS_CACHE_MS) {
-    try {
-      const ds = makeDeepSeek(apiKey);
-      await generateText({
-        model: ds.chat('deepseek-v4-flash'),
-        prompt: 'OK',
-        maxRetries: 0,
-        timeout: { totalMs: 4000 },
-      });
-      dsAlive = true;
-    } catch (_) {
-      dsAlive = false;
-    }
-    dsCheckedAt = now;
-  }
+  // 先建 SSE 流再干活：createUIMessageStream 的 execute 在流拉起时即执行，响应头随之立即下发，
+  // 浏览器马上拿到 200。否则下方通道探针（4s）+ 意图判断（7s）+ Jina 搜索（8s）全部 await 在
+  // 返回 Response 之前，脆弱代理链路会长时间等不到响应头而直接 ERR_CONNECTION_CLOSED / Failed to fetch
+  // （全站助手无前置 await、响应头秒回，故不受影响——线上实测两类端点表现差异即源于此）。
+  const uiStream = createUIMessageStream({
+    onError: e => '生成失败：' + (e?.message || '未知错误，请重试'),
+    execute: async ({ writer }) => {
+      // 首帧立即发：幂等 start（客户端对无 messageId 的 start 是 noop），兼作保活心跳，
+      // 前置 AI/搜索 await 期间每 5s 一帧防中间代理掐空闲连接
+      writer.write({ type: 'start' });
+      const keepAlive = setInterval(() => {
+        try { writer.write({ type: 'start' }); } catch (_) {}
+      }, 5000);
 
-  let model;
-  if (dsAlive) {
-    model = makeDeepSeek(apiKey).chat('deepseek-v4-flash');
-  } else if (env.CF_ACCOUNT_ID && env.CF_AI_TOKEN) {
-    const cf = createOpenAI({
-      baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
-      apiKey: env.CF_AI_TOKEN,
-    });
-    model = cf.chat('@cf/qwen/qwen3-30b-a3b-fp8');
-  } else {
-    return json400('DeepSeek 跨境不通且未配置 Workers AI 降级通道');
-  }
+      try {
+        // ===== 通道选择：DeepSeek（探针 + 60s 缓存）→ Workers AI qwen3-30b =====
+        const now = Date.now();
+        if (dsAlive === null || now - dsCheckedAt > DS_CACHE_MS) {
+          try {
+            const ds = makeDeepSeek(apiKey);
+            await generateText({
+              model: ds.chat('deepseek-v4-flash'),
+              prompt: 'OK',
+              maxRetries: 0,
+              timeout: { totalMs: 4000 },
+            });
+            dsAlive = true;
+          } catch (_) {
+            dsAlive = false;
+          }
+          dsCheckedAt = now;
+        }
 
-  // ===== 联网搜索决策：给上下文补充外部信息 =====
-  // 规则：引导性问题 chip（search=true）且是首条消息 → 直接搜（这类问题本来就要原文之外的信息）；
-  // 其余消息 → 快速意图判断（模型自主决定），需要才搜；搜索失败/超时一律静默跳过
-  let searchBlock = '';
-  if (env.JINA_API_KEY) {
-    const lastUserText = (trimmed[trimmed.length - 1].parts || []).map(p => p.text).join(' ');
-    let query = null;
-    if (search === true && trimmed.length === 1) {
-      query = lastUserText; // chip 直搜
-    } else {
-      query = await intentNeedsSearch({ model, title, userText: lastUserText });
-    }
-    if (query) {
-      const result = await jinaSearch(query, env.JINA_API_KEY);
-      if (result) {
-        searchBlock = `
+        let model;
+        if (dsAlive) {
+          model = makeDeepSeek(apiKey).chat('deepseek-v4-flash');
+        } else if (env.CF_ACCOUNT_ID && env.CF_AI_TOKEN) {
+          const cf = createOpenAI({
+            baseURL: `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1`,
+            apiKey: env.CF_AI_TOKEN,
+          });
+          model = cf.chat('@cf/qwen/qwen3-30b-a3b-fp8');
+        } else {
+          throw new Error('DeepSeek 跨境不通且未配置 Workers AI 降级通道');
+        }
+
+        // ===== 联网搜索决策：给上下文补充外部信息 =====
+        // 规则：引导性问题 chip（search=true）且是首条消息 → 直接搜（这类问题本来就要原文之外的信息）；
+        // 其余消息 → 快速意图判断（模型自主决定），需要才搜；搜索失败/超时一律静默跳过
+        let searchBlock = '';
+        if (env.JINA_API_KEY) {
+          const lastUserText = (trimmed[trimmed.length - 1].parts || []).map(p => p.text).join(' ');
+          let query = null;
+          if (search === true && trimmed.length === 1) {
+            query = lastUserText; // chip 直搜
+          } else {
+            query = await intentNeedsSearch({ model, title, userText: lastUserText });
+          }
+          if (query) {
+            const result0 = await jinaSearch(query, env.JINA_API_KEY);
+            if (result0) {
+              searchBlock = `
 
 【搜索补充资料（系统联网搜到的相关信息，仅供参考）】
 搜索词：${query}
-${result}`;
-      }
-    }
-  }
+${result0}`;
+            }
+          }
+        }
 
-  const system = `${NEWS_CHAT_SYSTEM}
+        const system = `${NEWS_CHAT_SYSTEM}
 
 【当前讨论的原文】
 来源：${source || '未知'}
@@ -195,19 +210,30 @@ ${result}`;
 正文（以下是你唯一的事实依据）：
 ${text.slice(0, MAX_TEXT)}${searchBlock}`;
 
-  // ===== 流式生成 + UIMessage SSE =====
-  const result = streamText({
-    model,
-    system,
-    messages: modelMessages,
-    temperature: 0.8,
-    maxRetries: 0,
-    abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
-  });
-
-  const uiStream = toUIMessageStream({
-    stream: result.stream,
-    onError: e => '生成失败：' + (e?.message || '未知错误，请重试'),
+        // ===== 流式生成并并入外层流 =====
+        // 手动逐块搬运（而非 writer.merge 一次性托管）：keepAlive 心跳持续到子流读完，
+        // 模型首 token 若跨境慢、中途出现 >5s 空窗也有心跳帧保活；子流 onError 已把异常转成 error chunk
+        const result = streamText({
+          model,
+          system,
+          messages: modelMessages,
+          temperature: 0.8,
+          maxRetries: 0,
+          abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
+        });
+        const reader = toUIMessageStream({
+          stream: result.stream,
+          onError: e => '生成失败：' + (e?.message || '未知错误，请重试'),
+        }).getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          writer.write(value);
+        }
+      } finally {
+        clearInterval(keepAlive);
+      }
+    },
   });
 
   return createUIMessageStreamResponse({ stream: uiStream });
