@@ -34,16 +34,6 @@ function stripPromoLinks(text) {
   return s;
 }
 
-function jsonResponse(obj, status = 200) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
-}
-
 // X 字符计数：CJK/emoji 按 2，URL 按 23，其余按 1
 export function xCharCount(text) {
   const t = String(text || '');
@@ -224,22 +214,60 @@ async function runAgent({ model, prompt, env, material, totalMs, stepMs, maxRetr
 export async function onRequestPost(context) {
   const { request, env } = context;
 
+  // 流式响应：推文生成最坏 100+ 秒，若像旧版那样全程无字节，脆弱代理会在等待响应头阶段直接
+  // ERR_CONNECTION_CLOSED（前端 Failed to fetch）。改为响应头立即下发，5s 心跳 + 阶段进度事件，
+  // 末尾用一个 result 事件吐完整 JSON；前端按 SSE 块解析
+  let reqBody = {};
+  try { reqBody = (await request.json()) || {}; } catch (_) { reqBody = {}; }
   const apiKey = env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    return jsonResponse({ code: 500, message: '未配置 DEEPSEEK_API_KEY' }, 500);
-  }
 
-  try {
-    const body = await request.json().catch(() => ({}));
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = obj => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      // SSE 注释帧（": hb"）天然被解析器忽略，纯保活
+      const heartbeat = setInterval(() => {
+        try { controller.enqueue(encoder.encode(': hb\n\n')); } catch (_) {}
+      }, 5000);
+      try {
+        if (!apiKey) throw new Error('未配置 DEEPSEEK_API_KEY');
+        const payload = await produceTweets({
+          env,
+          apiKey,
+          body: reqBody,
+          progress: stage => emit({ type: 'progress', stage }),
+        });
+        emit({ type: 'result', ...payload });
+      } catch (e) {
+        emit({ type: 'error', message: '推文生成失败: ' + (e?.message || String(e)) });
+      } finally {
+        clearInterval(heartbeat);
+        try { controller.close(); } catch (_) {}
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+}
+
+// 实际生成流程：成功返回 { code:0, articles, ... }，任何失败直接 throw（由外层包成 error 事件）
+async function produceTweets({ env, apiKey, body, progress }) {
     const profileText = String(body.profileText || '').slice(0, 600);
     const keywords = Array.isArray(body.profileKeywords)
       ? body.profileKeywords.filter(k => typeof k === 'string' && k.length >= 2 && k.length <= 12).slice(0, 30)
       : [];
 
     // ===== 1. 拉新闻池 =====
+    progress?.('正在扫描 24h 新闻池…');
     const poolResult = await buildNewsPool();
     if (!poolResult.pool.length) {
-      return jsonResponse({ code: 404, message: '24小时内新闻池为空，稍后再试' }, 200);
+      throw new Error('24小时内新闻池为空，稍后再试');
     }
 
     // ===== 2. 偏好匹配打分 =====
@@ -317,6 +345,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
     let legacyMode = false; // 决定 ok 默认值（legacy=摘要,Agent=看具体条目）
 
     // 探针（4s）：DeepSeek 跨境是否通
+    progress?.('正在探测 AI 通道…');
     let deepseekAlive = false;
     try {
       await generateText({
@@ -330,6 +359,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
 
     // 通道 1：DeepSeek Agent（60s 硬超时，卡住就走 legacy 单轮）
     if (deepseekAlive) {
+      progress?.('AI 正在阅读 5 篇新闻原文并撰写推文（约 1 分钟）…');
       try {
         const r = await Promise.race([
           runAgent({
@@ -347,6 +377,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
 
     // 通道 2：旧链路兜底（按前5篇素材，每篇摘要+2推文）。探针已死就直接走 Workers AI，不再浪费时间试 DeepSeek
     if (!articles) {
+      progress?.('主通道繁忙，已切换备用通道生成…');
       const legacy = await legacyGenerate({ apiKey, env, cf, material: mat5, profileText, tryDeepSeek: deepseekAlive });
       articles = legacy.articles;
       channel = legacy.channel;
@@ -355,7 +386,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
     }
 
     if (!articles || articles.length < 5) {
-      return jsonResponse({ code: 502, message: '推文生成失败: ' + (lastError?.message || `产出不足5篇（${articles?.length ?? 0}）`) }, 200);
+      throw new Error(lastError?.message || `产出不足5篇（${articles?.length ?? 0}）`);
     }
 
     // 成稿保底：若 5 篇中无环球影讯，用候选里的环球素材替换最后一篇
@@ -403,6 +434,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
       };
     });
     // 并行拉正文（Agent 读过的命中缓存；超时/失败放降级提示，正文抓取不阻塞整体返回）
+    progress?.('正在取回 5 篇原文全文用于展示…');
     await Promise.allSettled(finalArticles.map(async (art) => {
       if (!art.url) { art.ok = false; art.text = '（无有效素材链接）'; return; }
       const meta = material.find(m => m.url === art.url) || {};
@@ -420,7 +452,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
       }
     }));
 
-    return jsonResponse({
+    return {
       code: 0,
       articles: finalArticles,
       poolTotal: poolResult.total,
@@ -428,10 +460,7 @@ ${profileText || '（无特定偏好，请按新闻热度和可讨论度选材�
       poolWindowHours: poolResult.windowHours || 24,
       channel,
       generatedAt: Date.now(),
-    });
-  } catch (e) {
-    return jsonResponse({ code: 502, message: '推文生成失败: ' + (e.message || String(e)) }, 200);
-  }
+    };
 }
 
 // ===== 旧链路（兜底）：前5条标题+摘要 → 单次生成 → 正则解析为 5×(摘要+2推文) =====

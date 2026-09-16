@@ -1431,11 +1431,12 @@
     body.innerHTML = '';
     genBtn.disabled = true;
     regenBtn.hidden = true;
-    subtitle.textContent = '正在扫描新闻池…';
-    setTimeout(() => { if (!loading.hidden) loading.querySelector('p').textContent = 'AI 正在阅读新闻原文（约 1-2 分钟）…'; }, 3000);
+    subtitle.textContent = '正在连接生成服务…';
 
     try {
       const profile = await buildTweetProfile();
+      // SSE 流式读取：生成耗时 1-2 分钟，服务端每 5s 发心跳 + 阶段进度，
+      // 末尾 result 事件带完整 JSON（旧代理会掐断长时间无字节的连接，心跳用于保活）
       const r = await fetch('/api/news-tweet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1443,11 +1444,45 @@
           profileText: profile.profileText,
           profileKeywords: profile.profileKeywords,
         }),
-        signal: AbortSignal.timeout(160000), // 兜底：Agent/legacy 双通道 + 5 篇正文并行抓取最坏约 150s
+        signal: AbortSignal.timeout(180000), // 兜底：Agent/legacy 双通道 + 5 篇正文并行抓取最坏约 150s
       });
-      const data = await r.json();
-      if (data.code !== 0 || !data.articles?.length) {
-        throw new Error(data.message || '生成失败');
+      if (!r.ok || !r.body) throw new Error('服务暂不可用（HTTP ' + r.status + '）');
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let result = null;
+      let errorMsg = '';
+      const handleBlock = block => {
+        // SSE 块：只取 data: 行（心跳是 ": hb" 注释块，无 data 行直接跳过）
+        const dataLine = block.split('\n').filter(l => l.startsWith('data:'))[0];
+        if (!dataLine) return;
+        let evt;
+        try { evt = JSON.parse(dataLine.slice(5).trim()); } catch (_) { return; }
+        if (evt.type === 'progress' && evt.stage) {
+          subtitle.textContent = evt.stage;
+        } else if (evt.type === 'result') {
+          result = evt;
+        } else if (evt.type === 'error') {
+          errorMsg = evt.message || '生成失败';
+        }
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let sep;
+        while ((sep = buf.indexOf('\n\n')) >= 0) {
+          handleBlock(buf.slice(0, sep));
+          buf = buf.slice(sep + 2);
+        }
+      }
+      if (buf.trim()) handleBlock(buf);
+
+      if (errorMsg) throw new Error(errorMsg);
+      const data = result;
+      if (!data || data.code !== 0 || !data.articles?.length) {
+        throw new Error(data?.message || '生成失败');
       }
       renderTweetResult(data);
     } catch (e) {
