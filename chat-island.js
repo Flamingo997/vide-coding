@@ -310,8 +310,7 @@ async function boot() {
           <header class="chat-head">
             <div class="chat-head-info">
               ${station ? html`
-                <span class="chat-head-src">[AI助手]</span>
-                <span class="chat-head-title" title="影新鲜站内助手">影新鲜站内助手</span>
+                <span class="chat-head-title" title="AI 影视助手">AI 影视助手</span>
               ` : html`
                 <span class="chat-head-src">[${article.source || '影讯'}]</span>
                 <a class="chat-head-title" href=${article.url} target="_blank" rel="noopener" title=${article.title}>${article.title}</a>
@@ -322,6 +321,9 @@ async function boot() {
 
           <div class="chat-list" ref=${listRef}>
             ${messages.length === 0 ? html`
+              ${station ? html`
+                <div class="chat-msg chat-msg-ai"><div class="chat-bubble">你好！我是 AI 影视助手，可以回答影视问题、推荐影视作品、生成资讯摘要。</div></div>
+              ` : null}
               <div class="chat-welcome">${station
                 ? '想找什么片直接问——片名、类型、演员都行，我只推荐站里真实有的。'
                 : '就这一篇新闻随便聊——追问背景、聊观点、问细节都行，我只按原文说话。'}</div>
@@ -363,8 +365,10 @@ async function boot() {
                 if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
               }}
             ></textarea>
-            <button class=${'chat-send' + (busy ? ' chat-send-stop' : '')} onClick=${() => (busy ? stop() : send())}>
-              ${busy ? '⏹ 停止' : '发送'}
+            <button class=${'chat-send' + (busy ? ' chat-send-stop' : '')} onClick=${() => (busy ? stop() : send())} aria-label=${busy ? '停止生成' : '发送'} title=${busy ? '停止生成' : '发送'}>
+              ${busy
+                ? html`<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`
+                : html`<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"></path></svg>`}
             </button>
           </footer>
         </aside>
