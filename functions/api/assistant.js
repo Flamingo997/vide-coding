@@ -3,7 +3,7 @@
 // 请求体：{ messages: UIMessage[], items?: [{id,title,type,date?,summary?}] }
 //   items = 策略A：前端当前页条目（≤50），searchItems 在这批 + TMDB + 服务端新闻池 中检索
 // Tool：searchItems 由模型运行时自主调用（真 tool calling），返回站内真实条目；任何异常消化为空结果，绝不 500
-import { streamText, generateText, convertToModelMessages, toUIMessageStream, createUIMessageStreamResponse, tool, stepCountIs } from 'ai';
+import { streamText, generateText, convertToModelMessages, toUIMessageStream, createUIMessageStream, createUIMessageStreamResponse, tool, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 import { STATION_ASSISTANT_SYSTEM } from '../_lib/prompts.js';
@@ -653,6 +653,20 @@ export async function onRequestPost(context) {
     : trimmed;
   const modelMessages = await convertToModelMessages(feedMessages);
 
+  // 先建 SSE 流再干活：与 news-chat/news-tweet 同一保活模式。
+  // 本站助手有两个无帧空窗会被脆弱代理掐断（实测 Failed to fetch）：
+  //  ① 冷 isolate 时 DeepSeek 探针 4s await 在返回 Response 之前（实测 TTFB 3s+）；
+  //  ② searchItems 工具执行期间 TMDB 三端点重试最坏 ~14s 完全静默（tool call 已输出、result 未回）。
+  // createUIMessageStream 的 execute 在流拉起时即执行、响应头秒下发；无 messageId 的 start 帧
+  // 客户端解析器是 noop（幂等），每 5s 一帧覆盖所有空窗，直到子流读完
+  const outerStream = createUIMessageStream({
+    onError: e => '生成失败：' + (e?.message || '未知错误，请重试'),
+    execute: async ({ writer }) => {
+      writer.write({ type: 'start' });
+      const keepAlive = setInterval(() => {
+        try { writer.write({ type: 'start' }); } catch (_) {}
+      }, 5000);
+      try {
   // ===== 通道选择：DeepSeek（探针 + 60s 缓存）→ Workers AI qwen3-30b =====
   const now = Date.now();
   if (dsAlive === null || now - dsCheckedAt > DS_CACHE_MS) {
@@ -681,7 +695,7 @@ export async function onRequestPost(context) {
     });
     model = cf.chat('@cf/qwen/qwen3-30b-a3b-fp8');
   } else {
-    return json400('DeepSeek 跨境不通且未配置 Workers AI 降级通道');
+    throw new Error('DeepSeek 跨境不通且未配置 Workers AI 降级通道');
   }
 
   // ===== 站内检索工具：模型运行时自主调用，数据全部来自本站（TMDB代理/新闻池/当前页条目）=====
@@ -898,12 +912,24 @@ export async function onRequestPost(context) {
     stopWhen: stepCountIs(5),
   });
 
-  const uiStream = toUIMessageStream({
+  // 手动逐块搬运（不用 writer.merge）：keepAlive 心跳持续到子流读完，
+  // 工具执行（TMDB 重试）与模型首 token 慢造成的 >5s 空窗全程有保活帧
+  const innerReader = toUIMessageStream({
     stream: result.stream,
     onError: e => '生成失败：' + (e?.message || '未知错误，请重试'),
+  }).getReader();
+  while (true) {
+    const { done, value } = await innerReader.read();
+    if (done) break;
+    writer.write(value);
+  }
+      } finally {
+        clearInterval(keepAlive);
+      }
+    },
   });
 
-  return createUIMessageStreamResponse({ stream: uiStream });
+  return createUIMessageStreamResponse({ stream: outerStream });
 }
 
 export async function onRequestOptions() {
