@@ -217,7 +217,7 @@ ${text.slice(0, MAX_TEXT)}${searchBlock}`;
           model,
           system,
           messages: modelMessages,
-          temperature: 0.8,
+          temperature: 0.5,
           maxRetries: 0,
           abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
         });

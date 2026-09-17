@@ -892,7 +892,7 @@ export async function onRequestPost(context) {
     model,
     system: STATION_ASSISTANT_SYSTEM,
     messages: modelMessages,
-    temperature: 0.7,
+    temperature: 0.5,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
     tools: { searchItems, getFavorites, getItemById, getCredits },
