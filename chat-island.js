@@ -69,13 +69,25 @@ async function boot() {
   const STATION_CHIPS = ['推荐几部近期值得看的影片', '挑一部新片，讲讲它的简介', '最近有哪些影视资讯？'];
   const MAX_INPUT = 500;
 
-  // 取消息纯文本：多步工具调用时 AI SDK 会给每个只调工具的 step 留一个空 text part
-  // （SSE 先 text-start 再走工具、本步无 text-delta），不过滤会在气泡顶部拼出成片空行，
-  // 故丢弃 trim 后为空的文本段，并去掉整体首尾空白
-  const textOf = m => (m.parts || [])
-    .filter(p => p.type === 'text')
-    .map(p => String(p.text || ''))
-    .filter(t => t.trim())
+  // 取消息纯文本（dedupeTextParts 统一处理多 text part）：
+  // 多步工具调用时 AI SDK 会给只调工具的 step 留空 text part（气泡顶部空行），需丢空段；
+  // 模型偶发「先写完整答案→调工具→把答案原样重发一遍」，需丢弃逐字重复段
+  function dedupeTextParts(parts) {
+    const seen = [];
+    const out = [];
+    for (const p of parts || []) {
+      if (p.type !== 'text') { out.push(p); continue; }
+      const t = String(p.text || '').trim();
+      if (!t) continue;
+      if (seen.includes(t)) continue;
+      seen.push(t);
+      out.push({ ...p, text: t });
+    }
+    return out;
+  }
+
+  const textOf = m => dedupeTextParts((m.parts || []).filter(p => p.type === 'text'))
+    .map(p => p.text)
     .join('\n')
     .trim();
 
@@ -156,9 +168,9 @@ async function boot() {
       const slim = (msgs || []).slice(-20).map(m => ({
         id: m.id,
         role: m.role,
-        parts: (m.parts || []).filter(p =>
-          // 空文本段（工具步留下的占位 text part）不持久化，避免历史膨胀且刷新后气泡顶部带空行
-          (p.type === 'text' && String(p.text || '').trim()) ||
+        // dedupeTextParts 丢空文本段（工具步占位）+ 逐字重复段；再过一遍只留已完成 tool parts
+        parts: dedupeTextParts(m.parts || []).filter(p =>
+          p.type === 'text' ||
           (typeof p.type === 'string' && p.type.startsWith('tool-') && p.state === 'output-available' && p.toolCallId)
         ).map(p => p.type === 'text'
           ? { type: 'text', text: String(p.text).trim() }
