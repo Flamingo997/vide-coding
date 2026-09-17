@@ -1201,7 +1201,12 @@ body {
   text-align: center;
   padding: 28px 16px 8px;
 }
-.chat-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 4px 6px 12px; }
+/* 引导问题条：常驻输入框上方（未输入且空闲时显示，有历史对话也显示；输入或生成中隐藏） */
+.chat-chips {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 10px 14px 12px;
+  background: #fff;
+}
 .chat-chip {
   border: 1px solid #DBEAFE; background: #F8FBFF;
   color: #1D6FBF; border-radius: 16px;

@@ -327,9 +327,6 @@ async function boot() {
               <div class="chat-welcome">${station
                 ? '想找什么片直接问——片名、类型、演员都行，我只推荐站里真实有的。'
                 : '就这一篇新闻随便聊——追问背景、聊观点、问细节都行，我只按原文说话。'}</div>
-              <div class="chat-chips">
-                ${chips.map(c => html`<button class="chat-chip" key=${c} onClick=${() => send(c)}>${c}</button>`)}
-              </div>
             ` : null}
 
             ${messages.map(m => {
@@ -353,6 +350,11 @@ async function boot() {
             ` : null}
           </div>
 
+          ${!busy && !input.trim() ? html`
+            <div class="chat-chips">
+              ${chips.map(c => html`<button class="chat-chip" key=${c} onClick=${() => send(c)}>${c}</button>`)}
+            </div>
+          ` : null}
           <footer class="chat-input-bar">
             <textarea
               class="chat-input"
