@@ -340,7 +340,7 @@ async function boot() {
 
     const persist = useCallback(msgs => saveHistory(storageKey, msgs), [storageKey]);
 
-    const { messages, sendMessage, status, stop, regenerate, clearError } = useChat({
+    const { messages, setMessages, sendMessage, status, stop, regenerate, clearError } = useChat({
       id: station ? 'station' : article.url,
       messages: initialMessages,
       transport,
@@ -371,6 +371,14 @@ async function boot() {
     }, [messages, status]);
 
     const busy = status === 'submitted' || status === 'streaming';
+
+    // 清空当前会话：重置消息并删除本地持久化（生成中禁用，避免截断请求）
+    const clearChat = useCallback(() => {
+      if (busy) return;
+      setMessages([]);
+      try { localStorage.removeItem(storageKey); } catch (_) {}
+      setUiError('');
+    }, [busy, setMessages, storageKey]);
 
     const send = useCallback(text => {
       const t = String(text ?? input).trim().slice(0, MAX_INPUT);
@@ -417,7 +425,18 @@ async function boot() {
                 <a class="chat-head-title" href=${article.url} target="_blank" rel="noopener" title=${article.title}>${article.title}</a>
               `}
             </div>
-            <button class="chat-close" onClick=${onClose} aria-label="关闭对谈">✕</button>
+            <div class="chat-head-actions">
+              ${messages.length > 0 ? html`
+                <button
+                  class="chat-clear"
+                  onClick=${clearChat}
+                  disabled=${busy}
+                  title=${busy ? '生成结束后可清空' : '清空当前会话'}
+                  aria-label="清空当前会话"
+                >清空</button>
+              ` : null}
+              <button class="chat-close" onClick=${onClose} aria-label="关闭对谈">✕</button>
+            </div>
           </header>
 
           <div class="chat-list" ref=${listRef}>
