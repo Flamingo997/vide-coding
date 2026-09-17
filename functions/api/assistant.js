@@ -442,13 +442,14 @@ function searchBodyItems(items, query, limit) {
 // 其他 = 策略A body items 的原始 id（含空 id 兜底按标题跳站内搜索）
 const MAX_OVERVIEW = 200; // 详情简介截断（防超上下文）
 
-// TMDB 单条详情：标题/日期/评分/类型/简介（统一入口重试+内存缓存；失败/查无均返回 null）
+// TMDB 单条详情：标题/日期/评分/类型/简介（统一入口重试+内存缓存；查无返回 null，请求瞬态失败返回 TRANSIENT 哨兵）
+const DETAIL_TRANSIENT = { __detailTransient: true };
 async function tmdbDetail(tmdbId, mediaType, key) {
   const j = await tmdbGetJson(
     `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${key}&language=zh-CN`,
     { cacheIf: x => !!(x && (x.title || x.name)) }
   );
-  if (!j) return null;
+  if (!j) return DETAIL_TRANSIENT; // 三端点重试后仍失败 → 瞬态，不能当「无资料」
   const title = mediaType === 'movie' ? (j.title || j.original_title) : (j.name || j.original_name);
   if (!title) return null;
   return {
@@ -878,11 +879,19 @@ export async function onRequestPost(context) {
     execute: async ({ id }) => {
       try {
         const item = await getItemByIdData(id, env, bodyItems);
-        if (!item) return null; // 查不到返回 null，模型会明说没有
+        if (item && item.__detailTransient) {
+          // 片库详情请求瞬态失败（区别于真空）：允许模型用同一 id 再调一次本工具重试；
+          // 结果返回前禁止输出「暂无简介」文本，避免「先答查不到、重试成功又给简介」的矛盾两段
+          return {
+            transient: true,
+            note: '详情查询刚才超时失败，不代表该片没有资料：请用同一个 id 立即再调用一次本工具重试；重试结果返回前，禁止告诉用户「暂无简介/没有详细资料」，也不要先写一段查不到、拿到结果后再补剧情',
+          };
+        }
+        if (!item) return null; // 查无此条 → 真空，模型明说没有即可
         return { ...item, typeLabel: TYPE_LABEL[item.type] || item.type || '条目' };
       } catch (_) {
         // 工具异常绝不冒泡导致整请求 500
-        return null;
+        return { transient: true, note: '详情查询出现异常：可用同一 id 再调用一次本工具，重试前禁止输出「暂无简介」结论' };
       }
     },
   });

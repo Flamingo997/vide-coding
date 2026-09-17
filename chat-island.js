@@ -87,9 +87,11 @@ async function boot() {
   }
 
   // 同名片名段落折叠：模型偶发把同一部作品的简介轻微换词写两遍（实测两段仅差一个「一位」、
-  // 标点不同，严格相等去重拦不住，用户看到的就是「同一部片重复一遍」）。
-  // 做法：按《片名》锚点切段，同一片名若出现多次，后段与已保留段「日期一致 + 字符二元组
-  // 高相似」则整段丢弃；日期不同或内容明显不同的同名作品不折叠（那种由服务端输入层剥离处理）。
+  // 标点不同，严格相等去重拦不住，用户看到的就是「同一部片重复一遍」）；还会出现「先答查不到、
+  // 重试成功又给出完整简介」的矛盾两段（一短一长、字面不相似，相似度规则也拦不住）。
+  // 做法：按《片名》锚点切段，同片名多段时——① 若存在「实质简介段」，「暂无简介声明段」整段丢弃；
+  // ② 后段与已保留段「日期一致 + 字符二元组高相似」则整段丢弃；
+  // ③ 日期不同或内容明显不同的同名作品不折叠（那种由服务端输入层剥离处理）。
   function collapseSameTitleBlocks(input) {
     const text = String(input || '');
     const anchors = [];
@@ -116,31 +118,52 @@ async function boot() {
       const d = String(str).match(/(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/);
       return d ? d[1] + '-' + d[2].padStart(2, '0') + '-' + d[3].padStart(2, '0') : '';
     };
+    // 「暂无简介」声明段：查不到话术、引导搜索框/过阵子再来，且不含实质剧情
+    const emptyClaim = s => /暂无|还没有[^。]{0,14}(简介|详细|资料|剧情|文案|评分)|没有[^。]{0,10}(简介|详细资料|剧情简介|详细介绍)|资料[^。]{0,10}(没|未|以后|之后再)|过阵|过段时间|过些时候|稍后再|以后再|搜索框找|先来看看/.test(s);
+    // 实质简介段：够长且含叙事标志
+    const substantive = s => s.replace(/\s/g, '').length >= 50
+      && /讲述|简介是|剧情|故事|记录|聚焦|围绕|改编|述说|讲的是|主角|主人公/.test(s);
     // 段体 = 锚点（含书名号）到下一锚点前的全部文本
+    const segs = anchors.map((a, i) => ({
+      title: a.title,
+      body: text.slice(a.start, i + 1 < anchors.length ? anchors[i + 1].start : text.length),
+    }));
+    const hasReal = title => segs.some(s => s.title === title && substantive(s.body));
     const keptByTitle = new Map();
     const keptSegs = [];
-    for (let i = 0; i < anchors.length; i++) {
-      const a = anchors[i];
-      const body = text.slice(a.start, i + 1 < anchors.length ? anchors[i + 1].start : text.length);
-      if ((counts.get(a.title) || 0) < 2) { keptSegs.push(body); continue; }
-      const dk = dateKey(body);
-      const prior = keptByTitle.get(a.title) || [];
-      const dup = prior.some(p => (!dk || !p.dk || dk === p.dk) && jaccard(body, p.body) >= 0.5);
-      if (dup) continue; // 同一部片的换词重写 → 丢弃整段（含其收尾推荐句）
-      prior.push({ dk, body });
-      keptByTitle.set(a.title, prior);
-      keptSegs.push(body);
+    for (const s of segs) {
+      if ((counts.get(s.title) || 0) < 2) { keptSegs.push(s.body); continue; }
+      // ① 同片名下已有/将有实质简介段 → 空声明段丢弃（先答查不到、后给简介的矛盾段）
+      if (emptyClaim(s.body) && !substantive(s.body) && hasReal(s.title)) continue;
+      // ② 同日期 + 高相似的换词重写段丢弃
+      const dk = dateKey(s.body);
+      const prior = keptByTitle.get(s.title) || [];
+      const dup = prior.some(p => (!dk || !p.dk || dk === p.dk) && jaccard(s.body, p.body) >= 0.5);
+      if (dup) continue;
+      prior.push({ dk, body: s.body });
+      keptByTitle.set(s.title, prior);
+      keptSegs.push(s.body);
     }
     const preamble = anchors.length ? text.slice(0, anchors[0].start) : '';
     return preamble + keptSegs.join('');
   }
 
-  const textOf = m => collapseSameTitleBlocks(
+  // 收尾推荐句排版：单片简介时，模型习惯在「适合……观众」前空一行；用户要求与剧情同段衔接。
+  // 只合并全文结尾处的最后一个空行+末段（末段须以推荐语开头、不含书名号、长度短），
+  // 绝不触碰多片推荐列表（那种末段含《片名》或是另一部片的介绍）。
+  function tightenClosing(input) {
+    return String(input || '').replace(
+      /。[ \t]*\n{2,}((?:适合|偏好|关注|喜欢|想看|推荐给)[^《》\n]{1,80}?[。！]?)\s*$/,
+      '。$1'
+    );
+  }
+
+  const textOf = m => tightenClosing(collapseSameTitleBlocks(
     dedupeTextParts((m.parts || []).filter(p => p.type === 'text'))
       .map(p => p.text)
       .join('\n')
       .trim()
-  );
+  ));
 
   // 从 assistant 消息的 tool parts 提取参考条目（searchItems/getFavorites 列表 + getItemById 单条），
   // 用于渲染「参考了哪些条目」chips（AI SDK 7：type='tool-<name>'，state='output-available' 时有 output）
