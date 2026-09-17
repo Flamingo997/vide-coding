@@ -65,8 +65,8 @@ async function boot() {
   const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
   const QUICK_CHIPS = ['这篇的重点帮我划一下', '这条新闻对行业意味着什么', '有什么值得吐槽的点'];
-  // 全站模式快捷问题：对应 /api/assistant 的 searchItems 工具（类型词→TMDB discover）
-  const STATION_CHIPS = ['有什么好看的科幻片？', '帮我找几部悬疑电影', '最近有什么喜剧可以看？'];
+  // 全站模式快捷问题：三个不同方向——推荐影片 / 影片简介 / 影讯（对应 /api/assistant 的 searchItems 工具与站内资讯时间线）
+  const STATION_CHIPS = ['推荐几部近期值得看的影片', '挑一部新片，讲讲它的简介', '最近有哪些影视资讯？'];
   const MAX_INPUT = 500;
 
   // 取消息纯文本：多步工具调用时 AI SDK 会给每个只调工具的 step 留一个空 text part
