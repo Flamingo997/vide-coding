@@ -386,21 +386,27 @@ async function searchNewsPool(query, limit) {
     const result = await Promise.race([buildNewsPool(), timer]);
     if (!result || !Array.isArray(result.pool)) return [];
     const q = String(query).toLowerCase().trim();
-    return result.pool
-      .filter(n => {
-        const t = String(n.title || '').toLowerCase();
-        const s = String(n.summary || '').toLowerCase();
-        return t.includes(q) || s.includes(q);
-      })
-      .slice(0, limit)
-      .map(n => ({
-        id: 'news-' + String(n.url || '').slice(-32),
-        title: n.title,
-        type: 'news',
-        date: n.ts ? new Date(n.ts).toISOString().slice(0, 10) : '',
-        source: n.source || '',
-        url: n.url || stationUrl(n.title),
-      }));
+    // 泛资讯问法（「影视资讯/影讯/新闻」等无具体关键词的）不做子串匹配——
+    // 新闻标题几乎不含这些泛词，子串匹配必空（引导问题「最近有哪些影视资讯？」就走这条路）；
+    // 直接按时间倒序返回最新资讯
+    const genericNews = /^(?:最新|最近)?(?:影视|电影|娱乐)?(?:资讯|新闻|影讯|消息|动态)[?？!！。]*$/.test(q);
+    const hits = genericNews
+      ? result.pool.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, limit)
+      : result.pool
+        .filter(n => {
+          const t = String(n.title || '').toLowerCase();
+          const s = String(n.summary || '').toLowerCase();
+          return t.includes(q) || s.includes(q);
+        })
+        .slice(0, limit);
+    return hits.map(n => ({
+      id: 'news-' + String(n.url || '').slice(-32),
+      title: n.title,
+      type: 'news',
+      date: n.ts ? new Date(n.ts).toISOString().slice(0, 10) : '',
+      source: n.source || '',
+      url: n.url || stationUrl(n.title),
+    }));
   } catch (_) {
     return [];
   }
