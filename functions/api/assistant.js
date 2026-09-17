@@ -324,7 +324,10 @@ const QUERY_SUFFIXES = [
   '的吗', '好吗', '行吗', '吗', '呢', '啊', '吧', '呀', '么',
 ];
 // 剥书名号/引号包裹与结尾疑问叹号（保留片名内部标点：·—：等，删了会搜不到）
-const stripWraps = q => String(q).replace(/^[《「“"']+/, '').replace(/[》」”"']+[？?！!]*$/, '').replace(/[？?！!]+$/, '').trim();
+const stripWraps = q => String(q || '').replace(/^[《「“"']+/, '').replace(/[》」”"']+[？?！!]*$/, '').replace(/[？?！!]+$/, '').trim();
+// 泛资讯问法（「影视资讯/影讯/新闻」等无具体关键词的）：新闻标题几乎不含这些泛词，子串匹配必空。
+// 统一改走「按时间倒序给最新资讯」，且这类查询对片库做文本检索也无意义，一并跳过
+const GENERIC_NEWS_RE = /^(?:最[新近]|近期)?的?(?:影视|电影|娱乐)?(?:资讯|新闻|影讯|消息|动态)[?？!！。]*$/;
 function cleanSearchQuery(raw) {
   const rawStr = String(raw || '').trim().slice(0, 30);
   let q = stripWraps(rawStr);
@@ -386,10 +389,8 @@ async function searchNewsPool(query, limit) {
     const result = await Promise.race([buildNewsPool(), timer]);
     if (!result || !Array.isArray(result.pool)) return [];
     const q = String(query).toLowerCase().trim();
-    // 泛资讯问法（「影视资讯/影讯/新闻」等无具体关键词的）不做子串匹配——
-    // 新闻标题几乎不含这些泛词，子串匹配必空（引导问题「最近有哪些影视资讯？」就走这条路）；
-    // 直接按时间倒序返回最新资讯
-    const genericNews = /^(?:最新|最近)?(?:影视|电影|娱乐)?(?:资讯|新闻|影讯|消息|动态)[?？!！。]*$/.test(q);
+    // 泛资讯问法不做子串匹配（引导问题「最近有哪些影视资讯？」就走这条路），直接按时间倒序返回最新资讯
+    const genericNews = GENERIC_NEWS_RE.test(q);
     const hits = genericNews
       ? result.pool.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, limit)
       : result.pool
@@ -712,9 +713,9 @@ export async function onRequestPost(context) {
     description: '在本站条目（电影、电视剧、综艺、动漫、纪录片、短剧、影视资讯）中检索，返回匹配条目标题、类型、上映日期与站内链接。找片、查片、问最近上什么、问有什么好看的都调用本工具。',
     inputSchema: z.object({
       intent: z.enum(['search', 'latest', 'popular']).optional().describe(
-        '检索意图：latest=最近/最新/近期上映上新；popular=热门/好看/推荐/有什么可看（无具体目标地逛）；search=有明确片名、演员名或类型词。拿不准可省略由系统判别'
+        '检索意图：latest=最近/最新/近期上映上新；popular=热门/好看/推荐/有什么可看（无具体目标地逛）；search=有明确片名、演员名、类型词，或用户想看影视资讯/影讯/新闻动态。拿不准可省略由系统判别'
       ),
-      query: z.string().optional().describe('intent=search 时必填：片名、演员名、类型词（如科幻/悬疑/喜剧）或主题词，尽量简短；latest/popular 时留空'),
+      query: z.string().optional().describe('intent=search 时必填：片名、演员名、类型词（如科幻/悬疑/喜剧）或主题词，尽量简短；latest/popular 时留空。注意：用户问「影视资讯/影讯/最近有什么新闻」时要用 intent=search 且 query 传「影视资讯」，这样才能走资讯通道拿到新闻条目'),
       exclude: z.array(z.string()).optional().describe('需要排除的片名列表：用户说「换几部/还有呢/别的」时，把上一轮已经推荐过的片名（不带书名号）传进来，本轮结果不会再包含它们'),
       limit: z.number().min(1).max(10).optional().default(5),
     }),
@@ -766,9 +767,11 @@ export async function onRequestPost(context) {
         if (!q) return seal({ count: 0, items: [] });
         const perSource = Math.max(4, wantN);
 
-        // 类型词 → discover；否则文本搜索（并行三源）
+        // 类型词 → discover；否则文本搜索（并行三源）。泛资讯词对片库检索无意义（搜不出东西
+        // 还会挤占合并额度把真正的资讯挤掉），跳过 TMDB，让新闻池按时间倒序供给
         const genreHit = GENRE_ZH.find(g => q.includes(g.key));
-        const tmdbTask = !env.TMDB_API_KEY
+        const newsQuery = GENERIC_NEWS_RE.test(q);
+        const tmdbTask = !env.TMDB_API_KEY || newsQuery
           ? Promise.resolve([])
           : genreHit
             ? tmdbGenreDiscover(genreHit, perSource, env.TMDB_API_KEY)
