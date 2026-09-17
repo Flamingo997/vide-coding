@@ -285,7 +285,9 @@ function mergeDedup(a, b, limit) {
   const decorate = x => ({ ...x, typeLabel: TYPE_LABEL[x.type] || x.type || '条目' });
   const isRichDetail = x => String(x.id || '').startsWith('tmdb-');
   for (const x of [...a, ...b]) {
-    const key = String(x.title || '').trim();
+    // 键归一化：去掉所有空白（不同来源同名条目可能夹带空格差异），同名只保留一条，
+    // 从数据层杜绝模型把两个同名片名条目各写一段
+    const key = String(x.title || '').replace(/\s+/g, '').trim();
     if (!key) continue;
     const pos = indexByTitle.get(key);
     if (pos === undefined) {
@@ -645,16 +647,33 @@ export async function onRequestPost(context) {
   const castAsk = /谁演|谁主演|的演员|的主演|演员名单|演员表|演员阵容|主演名单|演职员|主演是谁|演员是谁|有哪些演员|有哪些主演|(?:演员|主演|阵容)[？?。！!]*$/.test(lastUserText);
   const castFresh = castAsk && !favoritesLike;
 
-  // 演员类问题的送模消息净化：剥离历史中全部工具 part、只保留文本轮次。
-  // 两个实测原因：① 早期失败轮的空工具结果/「漏调工具下的错误文字结论」会诱导模型复读「查不到演员」；
-  // ② 更硬的坑——历史里已带 searchItems 的 tool_call/result 时，step0 再强制 toolChoice=searchItems，
-  // DeepSeek 兼容接口直接 400/500（start 后零帧即 error；二者单独存在都不报错，组合必现）。
-  // 剥离后保留用户/助手文本以支撑「那第一部谁演的」这类代词追问；空 parts 消息整条丢弃，
-  // 最后一条 user 必在（原始 trimmed 已保证）。真实阵容由下方 prepareStep 强制的新鲜工具链重新取得。
-  const feedMessages = castFresh
+  // 具名片名问题（书名号）——同名作品防双段：历史轮次可能 getItemById 过另一部同名作
+  // （站内时间线存在同名片名不同剧情的条目，如《兰香如故》《活色生香》实测），模型会把
+  // 历史旧简介与本轮检索结果各写一段。软提示不可靠（仍复现），改为机器侧硬剥离：
+  // ① 历史全部工具 part 丢弃（旧 getItemById 完整简介就存在工具结果里）；
+  // ② 历史助手「文本」中凡提及本次所问片名的整段也丢弃（上一轮的文字回答同样含完整剧情）；
+  // ③ 用户轮原文保留。代词追问（「这部讲什么」无书名号）不触发，上下文不受影响。
+  const askedTitles = [...new Set((lastUserText.match(/《[^《》]{1,30}》/g) || [])
+    .map(s => s.slice(1, -1).replace(/\s+/g, '').toLowerCase()).filter(s => s.length >= 2))];
+  const titleFresh = askedTitles.length > 0 && !favoritesLike;
+
+  // 演员类 / 具名片名问题的送模消息净化：只保留文本轮次（titleFresh 再剔除提及所问片名的旧文本段）。
+  // castFresh 另一个实测原因：历史里已带 searchItems 的 tool_call/result 时，step0 再强制
+  // toolChoice=searchItems，DeepSeek 兼容接口直接 400/500（二者单独存在都不报错，组合必现）。
+  // 空 parts 消息整条丢弃，最后一条 user 必在（原始 trimmed 已保证）。真实信息由本轮新鲜工具调用取得。
+  const stripHistory = castFresh || titleFresh;
+  const feedMessages = stripHistory
     ? trimmed
       .map(m => (m.role === 'assistant'
-        ? { ...m, parts: m.parts.filter(p => p.type === 'text') }
+        ? {
+          ...m,
+          parts: m.parts.filter(p => {
+            if (p.type !== 'text') return false;
+            if (!titleFresh) return true;
+            const norm = String(p.text || '').replace(/\s+/g, '').toLowerCase();
+            return !askedTitles.some(t => norm.includes(t));
+          }),
+        }
         : m))
       .filter(m => m.parts.length)
     : trimmed;
