@@ -86,10 +86,61 @@ async function boot() {
     return out;
   }
 
-  const textOf = m => dedupeTextParts((m.parts || []).filter(p => p.type === 'text'))
-    .map(p => p.text)
-    .join('\n')
-    .trim();
+  // 同名片名段落折叠：模型偶发把同一部作品的简介轻微换词写两遍（实测两段仅差一个「一位」、
+  // 标点不同，严格相等去重拦不住，用户看到的就是「同一部片重复一遍」）。
+  // 做法：按《片名》锚点切段，同一片名若出现多次，后段与已保留段「日期一致 + 字符二元组
+  // 高相似」则整段丢弃；日期不同或内容明显不同的同名作品不折叠（那种由服务端输入层剥离处理）。
+  function collapseSameTitleBlocks(input) {
+    const text = String(input || '');
+    const anchors = [];
+    const re = /《([^《》]{1,30})》/g;
+    let mm;
+    while ((mm = re.exec(text))) anchors.push({ title: mm[1], start: mm.index, end: re.lastIndex });
+    const counts = new Map();
+    for (const a of anchors) counts.set(a.title, (counts.get(a.title) || 0) + 1);
+    if (![...counts.values()].some(c => c >= 2)) return text;
+    const bigrams = str => {
+      const n = String(str).replace(/[\s\p{P}\p{S}]/gu, '');
+      const set = new Set();
+      for (let i = 0; i < n.length - 1; i++) set.add(n.slice(i, i + 2));
+      return set;
+    };
+    const jaccard = (a, b) => {
+      const A = bigrams(a), B = bigrams(b);
+      if (!A.size || !B.size) return 0;
+      let inter = 0;
+      for (const g of A) if (B.has(g)) inter++;
+      return inter / (A.size + B.size - inter);
+    };
+    const dateKey = str => {
+      const d = String(str).match(/(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/);
+      return d ? d[1] + '-' + d[2].padStart(2, '0') + '-' + d[3].padStart(2, '0') : '';
+    };
+    // 段体 = 锚点（含书名号）到下一锚点前的全部文本
+    const keptByTitle = new Map();
+    const keptSegs = [];
+    for (let i = 0; i < anchors.length; i++) {
+      const a = anchors[i];
+      const body = text.slice(a.start, i + 1 < anchors.length ? anchors[i + 1].start : text.length);
+      if ((counts.get(a.title) || 0) < 2) { keptSegs.push(body); continue; }
+      const dk = dateKey(body);
+      const prior = keptByTitle.get(a.title) || [];
+      const dup = prior.some(p => (!dk || !p.dk || dk === p.dk) && jaccard(body, p.body) >= 0.5);
+      if (dup) continue; // 同一部片的换词重写 → 丢弃整段（含其收尾推荐句）
+      prior.push({ dk, body });
+      keptByTitle.set(a.title, prior);
+      keptSegs.push(body);
+    }
+    const preamble = anchors.length ? text.slice(0, anchors[0].start) : '';
+    return preamble + keptSegs.join('');
+  }
+
+  const textOf = m => collapseSameTitleBlocks(
+    dedupeTextParts((m.parts || []).filter(p => p.type === 'text'))
+      .map(p => p.text)
+      .join('\n')
+      .trim()
+  );
 
   // 从 assistant 消息的 tool parts 提取参考条目（searchItems/getFavorites 列表 + getItemById 单条），
   // 用于渲染「参考了哪些条目」chips（AI SDK 7：type='tool-<name>'，state='output-available' 时有 output）
@@ -165,23 +216,23 @@ async function boot() {
   function saveHistory(key, msgs) {
     try {
       // 保留文本 + 已完成的 tool parts（刷新后参考条目 chips 和服务端追问上下文都依赖它）
-      const slim = (msgs || []).slice(-20).map(m => ({
-        id: m.id,
-        role: m.role,
-        // dedupeTextParts 丢空文本段（工具步占位）+ 逐字重复段；再过一遍只留已完成 tool parts
-        parts: dedupeTextParts(m.parts || []).filter(p =>
-          p.type === 'text' ||
-          (typeof p.type === 'string' && p.type.startsWith('tool-') && p.state === 'output-available' && p.toolCallId)
-        ).map(p => p.type === 'text'
-          ? { type: 'text', text: String(p.text).trim() }
-          : {
+      const slim = (msgs || []).slice(-20).map(m => {
+        const toolParts = dedupeTextParts(m.parts || []).filter(p =>
+          typeof p.type === 'string' && p.type.startsWith('tool-') && p.state === 'output-available' && p.toolCallId
+        ).map(p => ({
           type: p.type,
           toolCallId: p.toolCallId,
           state: 'output-available',
           input: p.input,
           output: p.output,
-        }),
-      }));
+        }));
+        // 文本段先逐字去重→拼接→同名段落折叠，存成单段，避免换词重复段被持久化后反复污染上下文
+        const mergedText = textOf(m);
+        const textParts = mergedText ? [{ type: 'text', text: mergedText }] : [];
+        // assistant 保持「工具段在前、文本在后」的时序（工具关联靠 toolCallId，顺序仅为还原原始结构）
+        const parts = m.role === 'assistant' ? [...toolParts, ...textParts] : [...textParts, ...toolParts];
+        return { id: m.id, role: m.role, parts };
+      });
       localStorage.setItem(key, JSON.stringify(slim));
     } catch (_) {}
   }
