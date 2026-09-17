@@ -99,7 +99,21 @@ async function boot() {
     return out;
   }
 
-  // 文本内《片名》链接化：片名出现在该条消息工具结果（站内真实条目）里才可点击，
+  // 会话级参考条目：聚合所有 assistant 消息的工具结果（searchItems/getFavorites/getItemById），
+  // 按片名去重。模型某一轮复用上文条目、本轮没调工具时，气泡里的《片名》依然可以点击传送
+  function sessionRefItems(msgs) {
+    const norm = s => String(s || '').replace(/\s+/g, '');
+    const map = new Map();
+    for (const m of msgs || []) {
+      for (const it of refItemsOf(m)) {
+        const k = norm(it.title);
+        if (k && !map.has(k)) map.set(k, it);
+      }
+    }
+    return [...map.values()];
+  }
+
+  // 文本内《片名》链接化：片名出现在会话内任一工具结果（站内真实条目）里才可点击，
   // 点击传送到该影片的站内位置（/?q= 落地到时间线检索）；不在站内的提及保持纯文本。
   // 《》由站内助手系统提示词强制；refs 在工具 output-available 后才有，流式过程中《》暂为纯文本，
   // 工具结果落定后自动变为可点击。
@@ -330,7 +344,7 @@ async function boot() {
             ` : null}
 
             ${messages.map(m => {
-              const refs = m.role === 'assistant' ? refItemsOf(m) : [];
+              const refs = m.role === 'assistant' ? sessionRefItems(messages) : [];
               const txt = textOf(m);
               const bubble = m.role === 'assistant' ? linkify(txt, refs, openRef) : txt;
               return html`
