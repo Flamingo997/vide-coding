@@ -660,21 +660,31 @@ export async function onRequestPost(context) {
   // 演员类 / 具名片名问题的送模消息净化：只保留文本轮次（titleFresh 再剔除提及所问片名的旧文本段）。
   // castFresh 另一个实测原因：历史里已带 searchItems 的 tool_call/result 时，step0 再强制
   // toolChoice=searchItems，DeepSeek 兼容接口直接 400/500（二者单独存在都不报错，组合必现）。
-  // 空 parts 消息整条丢弃，最后一条 user 必在（原始 trimmed 已保证）。真实信息由本轮新鲜工具调用取得。
+  // 空 parts 不会出现（剥空的助手轮补省略占位），最后一条 user 必在（原始 trimmed 已保证）。真实信息由本轮新鲜工具调用取得。
   const stripHistory = castFresh || titleFresh;
   const feedMessages = stripHistory
     ? trimmed
-      .map(m => (m.role === 'assistant'
-        ? {
+      .map(m => {
+        if (m.role !== 'assistant') return m;
+        const kept = m.parts.filter(p => {
+          if (p.type !== 'text') return false;
+          if (!titleFresh) return true;
+          const norm = String(p.text || '').replace(/\s+/g, '').toLowerCase();
+          return !askedTitles.some(t => norm.includes(t));
+        });
+        if (kept.length) return { ...m, parts: kept };
+        // 该助手轮内容全部被剥离（纯工具轮，或文本都在聊所问片名）：补一条省略占位，
+        // 否则模型会把它前面那条用户消息当成「尚未回答」而连旧问题一起重答（实测会多发一次检索）
+        return {
           ...m,
-          parts: m.parts.filter(p => {
-            if (p.type !== 'text') return false;
-            if (!titleFresh) return true;
-            const norm = String(p.text || '').replace(/\s+/g, '').toLowerCase();
-            return !askedTitles.some(t => norm.includes(t));
-          }),
-        }
-        : m))
+          parts: [{
+            type: 'text',
+            text: titleFresh
+              ? '（此前关于《' + askedTitles[0] + '》的讨论与检索结果已省略，请直接回答用户最新的问题，以本轮重新检索到的内容为准）'
+              : '（此前的检索过程已省略，以本轮重新检索到的内容为准）',
+          }],
+        };
+      })
       .filter(m => m.parts.length)
     : trimmed;
   const modelMessages = await convertToModelMessages(feedMessages);
