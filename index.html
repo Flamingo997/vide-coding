@@ -1222,9 +1222,15 @@
   }
 
   // ============ 首页：分品类上新卡片组（网格布局，无滚动条） ============
-  function oneLineSummary(text) {
+  function oneLineSummary(text, title) {
     if (!text || text.length < 2) return '暂无简介';
-    let s = text.replace(/^《.+?》/, '').trim();
+    // 仅当开头《X》与本条目标题同名时才剥掉（那是重复的片名前缀）；
+    // 像「《侠探杰克》的全新衍生剧」这种开头书名号是句子成分，剥了会变成残句「的全新衍生剧」
+    const titleKey = t => String(t || '').replace(/^《|》$/g, '').replace(/\s/g, '');
+    let s = text;
+    const lead = s.match(/^《(.+?)》/);
+    if (lead && title && titleKey(lead[1]) === titleKey(title)) s = s.slice(lead[0].length);
+    s = s.trim();
     // 分句：遇到句末标点就切，但若在引号配对中间则延后（把引号整体吞完再切）
     let cut = s;
     const quoteMap = { '"': '"', '“': '”', '‘': '’', '「': '」', '『': '』' };
@@ -1993,7 +1999,7 @@
           </div>
           <div class="cat-card-info">
             <div class="cat-card-title">${cleanBannerTitle(n.title)}</div>
-            <div class="cat-card-desc">${oneLineSummary(n.summary)}</div>
+            <div class="cat-card-desc">${oneLineSummary(n.summary, n.title)}</div>
           </div>
         </div>`;
     }).join('');
@@ -2027,7 +2033,7 @@
           <div class="cat-grid">
             ${items.map(n => {
               const cleanTitle = n.title.replace(/》.*$/, '》');
-              const desc = oneLineSummary(n.summary);
+              const desc = oneLineSummary(n.summary, n.title);
               const safeTitle = n.title.replace(/"/g, '&quot;');
               return `
               <div class="cat-card" data-type="${type}" data-title="${safeTitle}">
