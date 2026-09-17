@@ -505,13 +505,47 @@ async function newsDetailById(id, limit = 30) {
 }
 
 // getItemById 总入口：按 id 前缀分发到 TMDB / 新闻池 / body items；查不到返回 null（模型会明说没有）
+// 片名归一化：去书名号/空白后小写，用于跨源同名匹配
+const normDetailTitle = t => String(t || '').replace(/[《》\s]/g, '').toLowerCase();
 async function getItemByIdData(id, env, bodyItems) {
   const raw = String(id || '').trim();
   if (!raw) return null;
 
   const tmdbM = raw.match(/^tmdb-(movie|tv)-(\d+)$/);
   if (tmdbM && env.TMDB_API_KEY) {
-    return tmdbDetail(tmdbM[2], tmdbM[1], env.TMDB_API_KEY);
+    const detail = await tmdbDetail(tmdbM[2], tmdbM[1], env.TMDB_API_KEY);
+    // 页面时间线条目兜底：用户问的都是站内影片，bodyItems 已带同 id 条目的中文摘要。
+    // TMDB 详情瞬态失败、或返回 200 但 overview 为空时，用页面条目（同 id 优先，其次同名）补，
+    // 避免模型在「超时无详情」与「重试成功」之间写出「没找到…换个关键词」+ 完整简介的矛盾两段
+    const bodyFallback = () => {
+      const list = Array.isArray(bodyItems) ? bodyItems : [];
+      const good = it => !!(it && it.title && String(it.summary || '').trim());
+      const byId = list.find(it => good(it) && String(it.id || '') === raw);
+      if (byId) return byId;
+      const key = normDetailTitle(detail && detail.title);
+      return key ? list.find(it => good(it) && normDetailTitle(it.title) === key) : null;
+    };
+    const toBodyDetail = fb => ({
+      id: raw,
+      title: String(fb.title),
+      type: String(fb.type || (detail && detail.type) || ''),
+      date: String(fb.date || (detail && detail.date) || ''),
+      summary: String(fb.summary).trim().slice(0, MAX_OVERVIEW),
+      url: stationUrl(fb.title),
+    });
+    if (detail && detail.__detailTransient) {
+      const fb = bodyFallback();
+      if (fb) return toBodyDetail(fb); // 页面有条目摘要 → 直接成功，模型无需知道片库超时
+      return DETAIL_TRANSIENT;          // 页面也没有 → 保持瞬态语义，按重试流程处理
+    }
+    if (detail && !String(detail.overview || '').trim()) {
+      const fb = bodyFallback();
+      if (fb) {
+        const sum = String(fb.summary).trim().slice(0, MAX_OVERVIEW);
+        return { ...detail, overview: sum, summary: sum };
+      }
+    }
+    return detail;
   }
   if (raw.startsWith('news-')) {
     return newsDetailById(raw);
@@ -764,7 +798,7 @@ export async function onRequestPost(context) {
         // 单次锁：本轮已检索过则原样返回首次结果，杜绝换参数连调导致的两批结果+双段回答
         if (searchOnce) {
           return searchOnce.transient
-            ? { ...searchOnce, note: '本轮已确认片库检索服务超时，不要再调用 searchItems（换参数重调也不会有结果），直接把超时情况与「换词/稍后再问/首页搜索框」建议转告用户' }
+            ? { ...searchOnce, note: '本轮已确认片库检索服务超时（服务端已重试多个端点），不要再调用 searchItems。请只对用户说一句「片库查询刚才超时，请稍后再问一次」；禁止说「没找到/找不到/站内没有/片名有出入/换个关键词/用首页搜索框搜」，禁止给任何片名猜测或简介' }
             : { ...searchOnce, note: '本轮已经检索过，以上 items 就是站内结果，请直接据此回答，不要再调用 searchItems' };
         }
         const seal = r => {
@@ -841,7 +875,7 @@ export async function onRequestPost(context) {
             count: 0,
             items: [],
             transient: true,
-            note: '片库检索服务刚才超时失败（服务端已重试多个片库端点），本次空结果不可信，绝不代表站内没有收录。请直接告知用户：片库查询刚才超时了，可以换个关键词（演员名/类型词）或稍后再问一次，也可以用首页搜索框直接搜「' + q + '」。禁止说「站内没有/没收录/片名记错/刚又搜了一遍没有」之类的话。',
+            note: '片库检索服务刚才超时失败（服务端已重试多个片库端点），本次空结果不可信，绝不代表站内没有收录。请直接对用户说一句「片库查询刚才超时，请稍后再问一次」；禁止说「没找到/找不到/站内没有/片名有出入/换个关键词再搜/用首页搜索框搜」，禁止给任何片名猜测或剧情简介',
           });
         }
 
@@ -916,10 +950,10 @@ export async function onRequestPost(context) {
         const item = await getItemByIdData(sid, env, bodyItems);
         if (item && item.__detailTransient) {
           // 片库详情请求瞬态失败（区别于真空）：允许模型用同一 id 再调一次本工具重试；
-          // 结果返回前禁止输出「暂无简介」文本，避免「先答查不到、重试成功又给简介」的矛盾两段
+          // 结果返回前禁止输出任何否定性话术，避免「先答没找到、重试成功又给简介」的矛盾两段
           return {
             transient: true,
-            note: '详情查询刚才超时失败，不代表该片没有资料：请用同一个 id 立即再调用一次本工具重试；重试结果返回前，禁止告诉用户「暂无简介/没有详细资料」，也不要先写一段查不到、拿到结果后再补剧情',
+            note: '详情查询刚才超时失败，不代表该片没有资料：请用同一个 id 立即再调用一次本工具重试，且不要向用户提及这次失败。重试结果返回前，禁止输出任何文字，尤其禁止说「没找到/找不到/暂无资料/片名有出入/换个关键词再搜/用首页搜索框搜」；重试成功后直接给唯一一版简介。只有重试仍失败，才告知查询超时请稍后再问',
           };
         }
         if (!item) return null; // 查无此条 → 真空，模型明说没有即可
@@ -940,7 +974,7 @@ export async function onRequestPost(context) {
         return payload;
       } catch (_) {
         // 工具异常绝不冒泡导致整请求 500
-        return { transient: true, note: '详情查询出现异常：可用同一 id 再调用一次本工具，重试前禁止输出「暂无简介」结论' };
+        return { transient: true, note: '详情查询出现异常：可用同一 id 再调用一次本工具，重试前禁止输出任何文字，禁止说「没找到/暂无资料/片名有出入/换关键词」' };
       }
     },
   });

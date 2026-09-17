@@ -119,7 +119,7 @@ async function boot() {
       return d ? d[1] + '-' + d[2].padStart(2, '0') + '-' + d[3].padStart(2, '0') : '';
     };
     // 「暂无简介」声明段：查不到话术、引导搜索框/过阵子再来，且不含实质剧情
-    const emptyClaim = s => /暂无|还没有[^。]{0,14}(简介|详细|资料|剧情|文案|评分)|没有[^。]{0,10}(简介|详细资料|剧情简介|详细介绍)|资料[^。]{0,10}(没|未|以后|之后再)|过阵|过段时间|过些时候|稍后再|以后再|搜索框找|先来看看/.test(s);
+    const emptyClaim = s => /暂无|还没有[^。]{0,14}(简介|详细|资料|剧情|文案|评分)|没有[^。]{0,10}(简介|详细资料|剧情简介|详细介绍)|(?:没找到|未找到|找不到)[^。]{0,30}?(?:这部作品|该影片|这部影片|详细资料|的资料|的简介|的详细|条目)|片名有出入|换个?关键词|关键词再搜|搜索框直接搜|用首页搜索框|资料[^。]{0,10}(没|未|以后|之后再)|过阵|过段时间|过些时候|稍后再|以后再|搜索框找|先来看看/.test(s);
     // 实质简介段：够长且含叙事标志
     const substantive = s => s.replace(/\s/g, '').length >= 50
       && /讲述|简介是|剧情|故事|记录|聚焦|围绕|改编|述说|讲的是|主角|主人公/.test(s);
@@ -144,7 +144,11 @@ async function boot() {
       keptByTitle.set(s.title, prior);
       keptSegs.push(s.body);
     }
-    const preamble = anchors.length ? text.slice(0, anchors[0].start) : '';
+    // 首段被丢弃时，锚点前的导语（如「站里暂时没找到」）在语法上附属于首段，一并丢弃；
+    // 首段保留时导语（如「好的，」）原样保留
+    const preamble = (keptSegs.length && keptSegs[0] === segs[0].body)
+      ? text.slice(0, anchors[0].start)
+      : '';
     return preamble + keptSegs.join('');
   }
 
