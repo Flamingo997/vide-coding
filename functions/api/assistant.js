@@ -739,6 +739,16 @@ export async function onRequestPost(context) {
   // 请求级单次锁：弱模型有时一轮里换参数连调两次 searchItems，两批结果不同会让它自我否定、
   // 拼出两段回答。第二次调用直接返回首次结果并指令其停手（getItemById/getFavorites 不受限）
   let searchOnce = null;
+  // 详情同名锁（请求级）：弱模型一轮内会用不同 id（页面条目 id 与片库 id）连查同名作品，
+  // 一旦一个成功、另一个超时/真空，就会写出「先给完整简介、再补一段暂无简介」的矛盾两段。
+  // idTitle 记录本轮已知 id→归一化片名（页面条目预填 + 检索/收藏结果回填）；
+  // detailWon 记录片名→本轮首次成功取回的详情，之后同名任何 id 的查询一律回首次结果并命令停手。
+  const normTitleKey = t => String(t || '').replace(/[《》\s]/g, '').toLowerCase();
+  const idTitle = new Map();
+  for (const it of (bodyItems || [])) {
+    if (it && it.id && it.title) idTitle.set(String(it.id), normTitleKey(it.title));
+  }
+  const detailWon = new Map();
   const searchItems = tool({
     description: '在本站条目（电影、电视剧、综艺、动漫、纪录片、短剧、影视资讯）中检索，返回匹配条目标题、类型、上映日期与站内链接。找片、查片、问最近上什么、问有什么好看的都调用本工具。',
     inputSchema: z.object({
@@ -757,7 +767,16 @@ export async function onRequestPost(context) {
             ? { ...searchOnce, note: '本轮已确认片库检索服务超时，不要再调用 searchItems（换参数重调也不会有结果），直接把超时情况与「换词/稍后再问/首页搜索框」建议转告用户' }
             : { ...searchOnce, note: '本轮已经检索过，以上 items 就是站内结果，请直接据此回答，不要再调用 searchItems' };
         }
-        const seal = r => { searchOnce = r; return r; };
+        const seal = r => {
+          searchOnce = r;
+          // 回填 id→片名索引，供详情同名锁判断后续 getItemById 调用是否同名
+          try {
+            for (const it of (r.items || [])) {
+              if (it && it.id && it.title) idTitle.set(String(it.id), normTitleKey(it.title));
+            }
+          } catch (_) { /* 索引仅为防护辅助，失败忽略 */ }
+          return r;
+        };
         // 模型可能把整句口语塞进 query（「请你告诉我奥德赛讲了什么」），先服务端剥皮取核心词；
         // 剥光（纯追问如「这部怎么样」）才回退原词。
         // 旁路：模型直接传裸片名（含《》包裹）且精确命中站内条目时跳过清洗——
@@ -854,14 +873,19 @@ export async function onRequestPost(context) {
         if (kw) {
           favorites = favorites.filter(f => String(f.title).toLowerCase().includes(kw) || String(f.type).toLowerCase().includes(kw));
         }
+        const favOut = favorites.slice(0, MAX_FAV_RETURN).map(f => ({
+          ...f,
+          typeLabel: TYPE_LABEL[f.type] || f.type || '条目',
+        }));
+        // 回填 id→片名索引（收藏 id 也可能被模型用于 getItemById 连查）
+        for (const f of favOut) {
+          if (f && f.id && f.title) idTitle.set(String(f.id), normTitleKey(f.title));
+        }
         return {
           loggedIn: true,
           count: favorites.length,
           totalCount: data.count,
-          favorites: favorites.slice(0, MAX_FAV_RETURN).map(f => ({
-            ...f,
-            typeLabel: TYPE_LABEL[f.type] || f.type || '条目',
-          })),
+          favorites: favOut,
         };
       } catch (_) {
         // 工具异常绝不冒泡导致整请求 500
@@ -877,8 +901,19 @@ export async function onRequestPost(context) {
       id: z.string().describe('条目 id，来自之前工具返回结果中的 id 字段（如 tmdb-movie-123、news-xxx）'),
     }),
     execute: async ({ id }) => {
+      const sid = String(id || '');
+      const knownKey = idTitle.get(sid);
+      // 同名锁：该片名本轮已成功取回详情 → 同名的其他 id 查询直接回首次结果，不发起请求，
+      // 从源头杜绝「先给简介、再对同名 id 查空后补一段暂无简介」的矛盾两段
+      if (knownKey && detailWon.has(knownKey)) {
+        const first = detailWon.get(knownKey);
+        return {
+          ...first,
+          note: '《' + (first.title || '') + '》的详情本轮已经成功取回（即上面那一条），站内同名片名以该条为准，不要再输出第二段简介，也不要说「暂无简介」。如用户明确想看其他年份/版本，请让用户补充年份或演员信息后再检索',
+        };
+      }
       try {
-        const item = await getItemByIdData(id, env, bodyItems);
+        const item = await getItemByIdData(sid, env, bodyItems);
         if (item && item.__detailTransient) {
           // 片库详情请求瞬态失败（区别于真空）：允许模型用同一 id 再调一次本工具重试；
           // 结果返回前禁止输出「暂无简介」文本，避免「先答查不到、重试成功又给简介」的矛盾两段
@@ -888,7 +923,21 @@ export async function onRequestPost(context) {
           };
         }
         if (!item) return null; // 查无此条 → 真空，模型明说没有即可
-        return { ...item, typeLabel: TYPE_LABEL[item.type] || item.type || '条目' };
+        const payload = { ...item, typeLabel: TYPE_LABEL[item.type] || item.type || '条目' };
+        const key = normTitleKey(item.title);
+        // 兜底：模型用了检索结果之外的 id（idTitle 未覆盖）时，按返回片名再查一次锁
+        const prior = key ? detailWon.get(key) : null;
+        if (prior) {
+          return {
+            ...prior,
+            note: '《' + (prior.title || '') + '》的详情本轮已经取回（即上面那一条），直接沿用，禁止重复输出第二段，也不要再说「暂无简介」',
+          };
+        }
+        if (key) {
+          detailWon.set(key, payload);
+          if (sid) idTitle.set(sid, key);
+        }
+        return payload;
       } catch (_) {
         // 工具异常绝不冒泡导致整请求 500
         return { transient: true, note: '详情查询出现异常：可用同一 id 再调用一次本工具，重试前禁止输出「暂无简介」结论' };
