@@ -1129,11 +1129,17 @@ body {
   overflow: hidden;
   display: flex; flex-direction: column;
   box-shadow: 0 16px 48px rgba(15, 23, 42, 0.18);
-  animation: chatPopIn .18s ease-out;
+  animation: chatPopIn .22s ease-out;
 }
+/* 渐入渐出：入场柔和上浮淡入；关闭时先播退场动画（JS 240ms 后卸载），轻微下沉淡出 */
 @keyframes chatPopIn {
-  from { transform: translateY(12px) scale(0.98); opacity: 0.3; }
+  from { transform: translateY(14px) scale(0.97); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.chat-drawer.chat-closing { animation: chatPopOut .22s ease-in forwards; }
+@keyframes chatPopOut {
+  from { transform: translateY(0) scale(1); opacity: 1; }
+  to { transform: translateY(10px) scale(0.97); opacity: 0; }
 }
 
 /* 头部：锚定文章 */

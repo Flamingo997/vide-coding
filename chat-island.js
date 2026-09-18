@@ -353,6 +353,15 @@ async function boot() {
 
   // ===== 抽屉：station=true 全站助手（/api/assistant + searchItems 工具）；否则单篇文章对谈（/api/news-chat）=====
   function ChatDrawer({ article, autoQuestion, station, onClose }) {
+    // 渐入渐出：挂载即播入场动画（CSS chatPopIn）；关闭时先播退场动画（chatPopOut）再真正卸载
+    const [closing, setClosing] = useState(false);
+    const closeTimer = useRef(null);
+    useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+    const closeWithAnim = useCallback(() => {
+      if (closing) return; // 退场动画进行中，忽略重复关闭
+      setClosing(true);
+      closeTimer.current = setTimeout(() => { closeTimer.current = null; onClose(); }, 240);
+    }, [closing, onClose]);
     // v2：早期片库抖动期留下的「空检索结果」历史会让模型复读「没搜到」而不重新调用工具，
     // 服务端虽已强制重检，但旧上下文本身也是噪音，直接换键清空（仅全站助手）
     const storageKey = station ? 'stationchat:v2' : ('newschat:' + article.url);
@@ -401,12 +410,12 @@ async function boot() {
       if (status === 'ready' && messages.length) persist(messages);
     }, [status]);
 
-    // Esc 关闭
+    // Esc 关闭（走退场动画）
     useEffect(() => {
-      const h = e => { if (e.key === 'Escape') onClose(); };
+      const h = e => { if (e.key === 'Escape') closeWithAnim(); };
       window.addEventListener('keydown', h);
       return () => window.removeEventListener('keydown', h);
-    }, [onClose]);
+    }, [closeWithAnim]);
 
     // 自动滚到底
     useEffect(() => {
@@ -461,8 +470,8 @@ async function boot() {
     const chips = station ? STATION_CHIPS : QUICK_CHIPS;
 
     return html`
-      <div class="chat-overlay" onMouseDown=${e => { if (e.target === e.currentTarget) onClose(); }}>
-        <aside class="chat-drawer" role="dialog" aria-label=${station ? '全站 AI 助手' : '影视资讯聊天'}>
+      <div class="chat-overlay" onMouseDown=${e => { if (e.target === e.currentTarget) closeWithAnim(); }}>
+        <aside class=${'chat-drawer' + (closing ? ' chat-closing' : '')} role="dialog" aria-label=${station ? '全站 AI 助手' : '影视资讯聊天'}>
           <header class="chat-head">
             <div class="chat-head-info">
               ${station ? html`
@@ -482,7 +491,7 @@ async function boot() {
                   aria-label="清空当前会话"
                 >清空</button>
               ` : null}
-              <button class="chat-close" onClick=${onClose} aria-label="关闭对谈">✕</button>
+              <button class="chat-close" onClick=${closeWithAnim} aria-label="关闭对谈">✕</button>
             </div>
           </header>
 
