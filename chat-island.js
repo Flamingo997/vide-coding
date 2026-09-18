@@ -170,6 +170,29 @@ async function boot() {
       .trim()
   ));
 
+  // 整条文本是否只是「查找不到」式声明（生成中先藏住，等定稿再决定显隐）：
+  // 短文本 + 含查找不到话术 + 不含任何实质内容标志。正常的简介/评分/推荐回答不会被误判
+  function isNotFoundClaim(t) {
+    const s = String(t || '').trim();
+    if (!s || s.replace(/\s/g, '').length >= 120) return false;
+    if (/讲述|简介是|剧情|故事|聚焦|围绕|改编|主演|导演|上映|定档|开播|评分|类型|是一部|是部|记录|推荐/.test(s)) return false;
+    return /暂无|没有[^。]{0,10}(简介|资料|收录|条目)|(?:没找到|未找到|找不到|查不到)|片名有出入|换个?关键词|稍后再问|过阵子|过段时间/.test(s);
+  }
+
+  // 生成中是否压制最后一条 assistant 消息的文本、只显示等待动画（用户要求：查找期间保持等待界面，
+  // 不要先闪「查不到」再换成内容）：
+  // ① 有工具还没返回结果（检索/详情进行中）→ 等待；
+  // ② 目前整条只是「查找不到」式声明 → 先等待，定稿后再显示。
+  // 生成结束后（busy=false）恢复原有净化渲染：真空没找到的声明正常显示，矛盾声明已被 collapse 清理
+  function suppressStreamingText(msg, text, busyNow) {
+    if (!busyNow || !msg || msg.role !== 'assistant') return false;
+    const parts = Array.isArray(msg.parts) ? msg.parts : [];
+    const pendingTool = parts.some(p =>
+      typeof p.type === 'string' && p.type.startsWith('tool-')
+      && p.state !== 'output-available' && p.state !== 'output-error');
+    return pendingTool || isNotFoundClaim(text);
+  }
+
   // 从 assistant 消息的 tool parts 提取参考条目（searchItems/getFavorites 列表 + getItemById 单条），
   // 用于渲染「参考了哪些条目」chips（AI SDK 7：type='tool-<name>'，state='output-available' 时有 output）
   function refItemsOf(m) {
@@ -406,7 +429,10 @@ async function boot() {
     }, [clearError, regenerate]);
 
     const lastMsg = messages[messages.length - 1];
-    const showDots = busy && (!lastMsg || lastMsg.role === 'user' || !textOf(lastMsg));
+    const lastTxt = lastMsg ? textOf(lastMsg) : '';
+    // 生成中：检索进行中 / 目前只是查找不到声明 → 压制文本只显等待动画
+    const suppressLast = suppressStreamingText(lastMsg, lastTxt, busy);
+    const showDots = busy && (!lastMsg || lastMsg.role === 'user' || !lastTxt || suppressLast);
 
     // 参考条目 chip 点击：外链（资讯原文）新窗口打开，站内链接（/?q=）当前页跳转
     const openRef = useCallback(r => {
@@ -453,9 +479,10 @@ async function boot() {
                 : '就这一篇新闻随便聊——追问背景、聊观点、问细节都行，我只按原文说话。'}</div>
             ` : null}
 
-            ${messages.map(m => {
+            ${messages.map((m, idx) => {
               const refs = m.role === 'assistant' ? sessionRefItems(messages) : [];
-              const txt = textOf(m);
+              // 最后一条消息生成中被压制时（检索中/暂只是查找不到声明）不渲染气泡，只留等待动画
+              const txt = idx === messages.length - 1 && suppressLast ? '' : textOf(m);
               const bubble = m.role === 'assistant' ? linkify(txt, refs, openRef) : txt;
               return html`
               <div key=${m.id} class=${'chat-msg ' + (m.role === 'user' ? 'chat-msg-user' : 'chat-msg-ai')}>
