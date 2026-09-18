@@ -163,12 +163,29 @@ async function boot() {
     );
   }
 
-  const textOf = m => tightenClosing(collapseSameTitleBlocks(
+  // 删过程性台词与换词建议（旧提示词产物/模型自发）：完成后只留结论。
+  // 只动两种确定性废话：① 开头的「我先检索一下/稍等我查查」式过程句；② 「可以换个关键词再试…」建议句
+  function trimProcessPhrases(t) {
+    let s = String(t || '');
+    let cut = false;
+    // 开头独立过程句：好[的啊]，?+（我先/稍等/让我）…（检索/查查/查一下…）…。
+    s = s.replace(/^(?:好[的啊]?[，,]?\s*)?(?:我?先|稍等[，,]?\s*我?|让我)[^。\n]{0,22}?(?:检索|查一查|查查|查一下|搜一搜|搜搜|搜一下|看看|看一下|找找|找一找|找一下)[^。\n]{0,20}。\s*/, () => { cut = true; return ''; });
+    // 换词建议句（含换类型词/演员名/片名片段变体），及其前的连接逗号
+    s = s.replace(/[，,]?\s*(?:可以|建议|不妨|试试)换个?关键词[^。\n]{0,30}。?/g, () => { cut = true; return ''; });
+    // 只在确实删过内容时收拾尾部：悬挂连接标点收为句号，缺失句末标点则补上
+    if (cut) {
+      s = s.replace(/[，,、]\s*$/, '。');
+      if (s.trim() && !/[。！？…）\]」』”』]\s*$/.test(s)) s = s.replace(/\s*$/, '。');
+    }
+    return s;
+  }
+
+  const textOf = m => tightenClosing(collapseSameTitleBlocks(trimProcessPhrases(
     dedupeTextParts((m.parts || []).filter(p => p.type === 'text'))
       .map(p => p.text)
       .join('\n')
       .trim()
-  ));
+  )));
 
   // 整条文本是否只是「查找不到」式声明（生成中先藏住，等定稿再决定显隐）：
   // 短文本 + 含查找不到话术 + 不含任何实质内容标志。正常的简介/评分/推荐回答不会被误判
