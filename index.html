@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=20260917g">
+<link rel="stylesheet" href="styles.css?v=20260917h">
 </head>
 <body>
 
@@ -55,8 +55,6 @@
     <a class="nav-item optional" data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
     <a class="nav-item optional" data-view="timeline" data-type="duan"><span class="nav-dot" style="background:#9966FF"></span>短剧</a>
     <a class="nav-item fav-nav" data-view="favorites" id="favNav">★ <span class="fav-label">收藏</span><span class="fav-badge" id="favBadge" hidden>0</span></a>
-    <a class="nav-item rec-nav" data-view="recommend" id="recNav">✨ <span class="rec-label">推荐</span></a>
-    <a class="nav-item tweet-nav" data-view="tweet" id="tweetNav">📮 <span class="tweet-label">推文</span></a>
     <span class="nav-more" id="navMore">更多 ▾
       <span class="more-menu">
         <a data-view="timeline" data-type="doc"><span class="nav-dot" style="background:#2FA787"></span>纪录片</a>
@@ -80,6 +78,11 @@
 
       <!-- 轮播 Banner -->
       <section class="banner" id="banner">
+        <!-- 页面左上角空白处：推荐 / 推文 两个功能入口 -->
+        <div class="banner-entries">
+          <a class="banner-entry" data-view="recommend">✨ <span>推荐</span></a>
+          <a class="banner-entry" data-view="tweet">📮 <span>推文</span></a>
+        </div>
         <div class="slides" id="slides"></div>
         <div class="banner-bottom">
           <div class="banner-controls">
@@ -181,6 +184,7 @@
   <div class="tl-page">
     <h1 class="tl-title">为你推荐 ✨</h1>
     <p class="rec-subtitle" id="recSubtitle">基于你的收藏偏好生成</p>
+    <p class="view-switch"><a data-view="tweet">📮 去影讯推文</a><a data-view="home">← 回首页</a></p>
     <div class="rec-grid" id="recGrid"></div>
   </div>
 </main>
@@ -190,6 +194,7 @@
   <div class="tl-page">
     <h1 class="tl-title">影讯推文 📮</h1>
     <p class="rec-subtitle" id="tweetSubtitle">从 24h 新闻池按你的画像筛选 5 篇原文，每篇生成 2 条推文</p>
+    <p class="view-switch"><a data-view="recommend">✨ 去为你推荐</a><a data-view="home">← 回首页</a></p>
 
     <div class="tweet-actions">
       <button class="tweet-generate-btn" id="tweetGenBtn" onclick="generateTweets()">生成推文</button>
@@ -899,7 +904,7 @@
     if (view === 'timeline' && (type || 'all') !== 'all') trackTypeView(type);
   }
 
-  document.querySelectorAll('.nav-item, .more-menu a, .brand').forEach(el => {
+  document.querySelectorAll('.nav-item, .more-menu a, .brand, .banner-entry, .view-switch a').forEach(el => {
     el.addEventListener('click', () => goView(el.dataset.view, el.dataset.type));
   });
 
