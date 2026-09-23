@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>影新鲜 · 影视上新定档时间线</title>
-<link rel="stylesheet" href="styles.css?v=20260917j">
+<link rel="stylesheet" href="styles.css?v=20260917k">
 </head>
 <body>
 
@@ -63,10 +63,13 @@
     </span>
   </nav>
   <div class="header-right">
-    <button class="header-auth-btn" id="loginBtn" onclick="openLoginModal()">登录</button>
-    <button class="header-auth-btn header-auth-logout" id="logoutBtn" onclick="doSiteLogout()" hidden>退出登录</button>
-    <div class="search-box">
-      <input type="text" id="searchInput" placeholder="搜索作品 / 关键词">
+    <!-- 登录/搜索工具组：宽屏由 JS 移到 banner 左侧栏「推文」下方纵向排列，窄屏留在顶栏 -->
+    <div class="side-tools" id="sideTools">
+      <button class="header-auth-btn" id="loginBtn" onclick="openLoginModal()">登录</button>
+      <button class="header-auth-btn header-auth-logout" id="logoutBtn" onclick="doSiteLogout()" hidden>退出登录</button>
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="搜索影片">
+      </div>
     </div>
   </div>
 </header>
@@ -80,6 +83,8 @@
       <div class="banner-entries">
         <a class="banner-entry" data-view="recommend">✨ <span>推荐</span></a>
         <a class="banner-entry" data-view="tweet">📮 <span>推文</span></a>
+        <!-- 宽屏时 #sideTools（登录/搜索）由 JS 移入此插槽，纵向排在推文下方 -->
+        <div class="side-tools-slot" id="sideToolsSlot"></div>
       </div>
 
       <!-- 轮播 Banner -->
@@ -908,6 +913,20 @@
   document.querySelectorAll('.nav-item, .more-menu a, .brand, .banner-entry, .view-switch a').forEach(el => {
     el.addEventListener('click', () => goView(el.dataset.view, el.dataset.type));
   });
+
+  // 登录/搜索工具组随断点在「顶栏」与「banner 左侧栏推文下方」之间搬迁（同一节点移动，事件/状态不丢）
+  (function placeSideTools() {
+    const tools = document.getElementById('sideTools');
+    const headerSlot = document.querySelector('.header-right');
+    const sideSlot = document.getElementById('sideToolsSlot');
+    const wideMq = window.matchMedia('(min-width: 1680px)');
+    const relocate = () => {
+      const target = wideMq.matches ? sideSlot : headerSlot;
+      if (tools.parentElement !== target) target.appendChild(tools);
+    };
+    wideMq.addEventListener ? wideMq.addEventListener('change', relocate) : wideMq.addListener(relocate);
+    relocate();
+  })();
 
   document.querySelectorAll('#rangeRow .pill').forEach(p => {
     p.addEventListener('click', () => {
